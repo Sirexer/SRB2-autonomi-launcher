@@ -1,0 +1,7 @@
+#!/bin/sh
+HERE="$(dirname "$(readlink -f "$0")")"
+# Remember the user's original value so the launcher can hand it back to the game
+export LAUNCHER_ORIG_LD_LIBRARY_PATH="${LD_LIBRARY_PATH:-}"
+export LD_LIBRARY_PATH="$HERE/usr/bin/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+
+exec "$HERE/usr/bin/srb2al" "$@"

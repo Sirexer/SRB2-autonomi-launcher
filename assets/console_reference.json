@@ -1,0 +1,2067 @@
+[
+{
+"name": "autorecord",
+"kind": "var",
+"args": "<boolean>",
+"section": "Game options",
+"desc": "If enabled, replay demos are automatically recorded in Record Attack /NiGHTS Mode."
+},
+{
+"name": "compactscoreboard",
+"kind": "var",
+"args": "<boolean>",
+"section": "Game options",
+"desc": "If enabled, the multiplayer intermission screen is always displayed in its compact form, which is otherwise only used if there are 20 or more players in the game."
+},
+{
+"name": "ghost_bestrings",
+"kind": "var",
+"args": "<integer/string>",
+"section": "Game options",
+"desc": "Determines whether ghosts for the \"Best Rings\" records are displayed during Record Attack runs – \" Show \" shows only the ghost for the currently selected skin, while \" Show All \" shows ghosts for all skins."
+},
+{
+"name": "ghost_bestscore",
+"kind": "var",
+"args": "<integer/string>",
+"section": "Game options",
+"desc": "Determines whether ghosts for the \"Best Score\" records are displayed during Record Attack runs – \" Show \" shows only the ghost for the currently selected skin, while \" Show All \" shows ghosts for all skins."
+},
+{
+"name": "ghost_besttime",
+"kind": "var",
+"args": "<integer/string>",
+"section": "Game options",
+"desc": "Determines whether ghosts for the \"Best Time\" records are displayed during Record Attack runs – \" Show \" shows only the ghost for the currently selected skin, while \" Show All \" shows ghosts for all skins."
+},
+{
+"name": "ghost_guest",
+"kind": "var",
+"args": "<integer/string>",
+"section": "Game options",
+"desc": "Determines whether ghosts for guest replays are displayed during Record Attack runs."
+},
+{
+"name": "ghost_last",
+"kind": "var",
+"args": "<integer/string>",
+"section": "Game options",
+"desc": "Determines whether ghosts for the last recorded replay(s) are displayed during Record Attack runs – \" Show \" shows only the ghost for the currently selected skin, while \" Show All \" shows ghosts for all skins."
+},
+{
+"name": "hazardlog",
+"kind": "var",
+"args": "<boolean>",
+"section": "Game options",
+"desc": "If enabled, a message is shown in the console if a player is harmed by a hazard in Match and derived gametypes."
+},
+{
+"name": "itemfinder",
+"kind": "var",
+"args": "<boolean>",
+"section": "Game options",
+"desc": "Enables/disables the emblem radar, if it has already been unlocked."
+},
+{
+"name": "playbackspeed",
+"kind": "var",
+"args": "<integer>",
+"section": "Game options",
+"desc": "Sets the speed at which a demo is played back. Minimum value is 1, maximum value is 10."
+},
+{
+"name": "rollingdemos",
+"kind": "var",
+"args": "<boolean>",
+"section": "Game options",
+"desc": "If enabled, title screen demos are played after a certain amount of time has passed on the title screen."
+},
+{
+"name": "runscripts",
+"kind": "var",
+"args": "<boolean>",
+"section": "Game options",
+"desc": "Determines whether console scripts initiated by linedef type 415 or a level's ScriptName parameter are executed."
+},
+{
+"name": "seenames",
+"kind": "var",
+"args": "<integer/string>",
+"section": "Game options",
+"desc": "Controls how the names of other players are displayed when targeting them."
+},
+{
+"name": "showhud",
+"kind": "var",
+"args": "<boolean>",
+"section": "Game options",
+"desc": "Determines whether the Game HUD is displayed. Does not affect the Rankings/Scores HUD ."
+},
+{
+"name": "timerres",
+"kind": "var",
+"args": "<integer/string>",
+"section": "Game options",
+"desc": "Determines the type of timer displayed on the HUD in-game."
+},
+{
+"name": "translucenthud",
+"kind": "var",
+"args": "<integer>",
+"section": "Game options",
+"desc": "Sets the translucency of the Game HUD . The values range from 0 (invisible) to 10 (opaque). Does not affect the Rankings/Scores HUD ."
+},
+{
+"name": "addons_folder",
+"kind": "var",
+"args": "<foldername>",
+"section": "Addons menu",
+"desc": "If addons_option is set to Custom , this defines the folder the Addons menu searches in. You can use relative paths (e.g.: addons ) to define a folder relative to the SRB2 directory, or a full-length directory path (e.g.: C:/Users/ExampleUser/SRB2Addons ) to search for addons in a different folder than the SRB2 directory."
+},
+{
+"name": "addons_md5",
+"kind": "var",
+"args": "<integer/string>",
+"section": "Addons menu",
+"desc": "Determines how the game checks if two addon files are identical. This is used to determine which files are marked as \"loaded\" in the Addons menu – any file that is considered identical to an already loaded file is marked as \"loaded\"."
+},
+{
+"name": "addons_option",
+"kind": "var",
+"args": "<integer/string>",
+"section": "Addons menu",
+"desc": "Determines the folder that the Addons menu searches in."
+},
+{
+"name": "addons_search_case",
+"kind": "var",
+"args": "<boolean>",
+"section": "Addons menu",
+"desc": "Determines whether the filename search in the Addons menu is case-sensitive or not."
+},
+{
+"name": "addons_search_type",
+"kind": "var",
+"args": "<integer/string>",
+"section": "Addons menu",
+"desc": "Determines how the filename search in Addons menu works."
+},
+{
+"name": "addons_showall",
+"kind": "var",
+"args": "<boolean>",
+"section": "Addons menu",
+"desc": "If disabled, the Addons menu will only show files with a supported type ( .txt , .cfg , .wad , .pk3 , .soc and .lua ). If enabled, even unsupported files will be shown."
+},
+{
+"name": "con_backcolor",
+"kind": "var",
+"args": "<color>",
+"section": "Console",
+"desc": "Sets the background color of the console and the chat window. Both the colors' names or their number values can be used here."
+},
+{
+"name": "con_backpic",
+"kind": "var",
+"args": "<translucent/picture>",
+"section": "Console",
+"desc": "Determines whether the console uses a background picture or not when opened."
+},
+{
+"name": "con_height",
+"kind": "var",
+"args": "<integer>",
+"section": "Console",
+"desc": "Sets the height of the console. The value used is a percentage of the screen's height."
+},
+{
+"name": "con_hudlines",
+"kind": "var",
+"args": "<integer>",
+"section": "Console",
+"desc": "Sets the number of lines the console may display on the HUD when not opened. Minimum value is 1, maximum value is 20. Note: the actual number of lines displayed is one less than the value of this variable; e.g. con_hudlines 8 will make the console display up to 7 lines."
+},
+{
+"name": "con_hudtime",
+"kind": "var",
+"args": "<integer>",
+"section": "Console",
+"desc": "Sets how long the console's HUD messages last on the screen, in seconds. A value of 0 disables the messages."
+},
+{
+"name": "con_speed",
+"kind": "var",
+"args": "<integer>",
+"section": "Console",
+"desc": "Sets the rate at which the console moves when being opened or closed. The maximum value is 255. A value of 0 disables the animation and opens/closes the console instantly."
+},
+{
+"name": "con_textsize",
+"kind": "var",
+"args": "<integer/string>",
+"section": "Console",
+"desc": "Sets the scale of text in the console. Note that despite the names of the accepted strings, the actual displayed text sizes depend on the screen resolution. See Video flags > Scale for more information on the effects of the corresponding video flags given for each of the options below."
+},
+{
+"name": "chatbacktint",
+"kind": "var",
+"args": "<boolean>",
+"section": "Chat",
+"desc": "If enabled, received chat messages are displayed on the tinted translucent background that is also used for the console and the full chat window. If disabled, they are laid over the screen directly."
+},
+{
+"name": "chatheight",
+"kind": "var",
+"args": "<integer>",
+"section": "Chat",
+"desc": "Sets the height of the chat window, as the number of lines that are visible at the same. Minimum value is 6, maximum value is 22."
+},
+{
+"name": "chatmode",
+"kind": "var",
+"args": "<integer/string>",
+"section": "Chat",
+"desc": "Sets the chat mode."
+},
+{
+"name": "chatnotifications",
+"kind": "var",
+"args": "<boolean>",
+"section": "Chat",
+"desc": "Determines whether a sound effect is played when a chat message is sent or received."
+},
+{
+"name": "chatspamprotection",
+"kind": "var",
+"args": "<boolean>",
+"section": "Chat",
+"desc": "Enables/disables spam protection. If spam protection is enabled and a player sends too many messages in rapid succession, they will be hidden from the chat window."
+},
+{
+"name": "chattime",
+"kind": "var",
+"args": "<integer>",
+"section": "Chat",
+"desc": "Sets the time in seconds that a received chat message stays on-screen before it disappears. Minimum value is 5, maximum value is 999."
+},
+{
+"name": "chatwidth",
+"kind": "var",
+"args": "<integer>",
+"section": "Chat",
+"desc": "Sets the width of the chat window. The value given is the number of pixels that the chat window would occupy in the base resolution, which has a width of 320. In higher resolutions, the window is scaled accordingly. Minimum value is 64, maximum value is 150."
+},
+{
+"name": "apng_compress_level",
+"kind": "var",
+"args": "<integer/string>",
+"section": "Screenshots and movies",
+"desc": "Sets the compression level for animated PNGs, ranging from 0 to 9. 0 completely disables compression (not recommended), 1 is best speed, and 9 is best compression."
+},
+{
+"name": "apng_memory_level",
+"kind": "var",
+"args": "<integer/string>",
+"section": "Screenshots and movies",
+"desc": "Sets the memory level for animated PNGs, ranging from 1 to 9. This affects how much memory will be used during compression; lowering it will result in less memory usage, but at the cost of slower/worse compression."
+},
+{
+"name": "apng_speed",
+"kind": "var",
+"args": "<integer/string>",
+"section": "Screenshots and movies",
+"desc": "Sets the playback speed of animated PNGs."
+},
+{
+"name": "apng_strategy",
+"kind": "var",
+"args": "<integer/string>",
+"section": "Screenshots and movies",
+"desc": "Determines which type of compression should be used for animated PNGs."
+},
+{
+"name": "apng_window_size",
+"kind": "var",
+"args": "<integer/string>",
+"section": "Screenshots and movies",
+"desc": "Specifies the size of the compression window for animated PNGs. Smaller values mean less memory usage, but at the expense of worse compression."
+},
+{
+"name": "gif_downscale",
+"kind": "var",
+"args": "<boolean>",
+"section": "Screenshots and movies",
+"desc": "Determines whether GIF movies are downscaled or not. If enabled, GIFs are recorded with an image size of 320×200 (or a similar ratio) rather than the screen's resolution. If disabled, the image size will be the same as the screen's resolution. Note: Changing this variable while a GIF is currently being recorded will not change the GIF's image size."
+},
+{
+"name": "gif_optimize",
+"kind": "var",
+"args": "<boolean>",
+"section": "Screenshots and movies",
+"desc": "Determines whether GIF movies are optimized or not. Note: Changing this variable while a GIF is currently being recorded will not change how the GIF will be written."
+},
+{
+"name": "moviemode_mode",
+"kind": "var",
+"args": "<integer/string>",
+"section": "Screenshots and movies",
+"desc": "Determines the format in which the movies recorded with the startmovie command are saved. \" GIF \" is exclusive to the Software rendering mode; in OpenGL \" aPNG \" is automatically used even when \" GIF \" is set."
+},
+{
+"name": "png_compress_level",
+"kind": "var",
+"args": "<integer/string>",
+"section": "Screenshots and movies",
+"desc": "Sets the compression level for screenshots , ranging from 0 to 9. 0 completely disables compression (not recommended), 1 is best speed, and 9 is best compression."
+},
+{
+"name": "png_memory_level",
+"kind": "var",
+"args": "<integer/string>",
+"section": "Screenshots and movies",
+"desc": "Sets the memory level for screenshots, ranging from 0 to 9. This affects how much memory will be used during compression; lowering it will result in less memory usage, but at the cost of slower/worse compression."
+},
+{
+"name": "png_strategy",
+"kind": "var",
+"args": "<integer/string>",
+"section": "Screenshots and movies",
+"desc": "Determines which type of compression should be used for screenshots."
+},
+{
+"name": "png_window_size",
+"kind": "var",
+"args": "<integer/string>",
+"section": "Screenshots and movies",
+"desc": "Specifies the size of the compression window for screenshots. Smaller values mean less memory usage, but at the expense of worse compression."
+},
+{
+"name": "screenshot_folder",
+"kind": "var",
+"args": "<foldername>",
+"section": "Screenshots and movies",
+"desc": "If screenshot_option is set to Custom , this defines the folder in which screenshots and movies are saved. You can use relative paths (e.g.: screenshots ) to define a folder relative to the SRB2 directory, or a full-length directory path (e.g.: C:/Users/ExampleUser/SRB2Screenshots ) to save them in a different folder than the SRB2 directory."
+},
+{
+"name": "screenshot_option",
+"kind": "var",
+"args": "<integer/string>",
+"section": "Screenshots and movies",
+"desc": "Determines where screenshots and movies of SRB2 are saved."
+},
+{
+"name": "op_flags",
+"kind": "var",
+"args": "<integer>",
+"section": "Object placement mode",
+"desc": "Sets the flags value for Things that are placed in Object placement mode . Ranges from 0 to 15."
+},
+{
+"name": "op_mapthingnum",
+"kind": "var",
+"args": "<number>",
+"section": "Object placement mode",
+"desc": "Sets the Thing type number of Things spawned in Object placement mode . If set to 0, the user can cycle through the Thing types to place with the \"Rotate Camera\" controls. Setting op_mapthingnum to a specific Thing type overrides this and causes Things of the specified type to be placed instead. Thing types without a corresponding Object type cannot be spawned, and an error will be shown in the console when attempting to. Ranges from 0 to 4095."
+},
+{
+"name": "op_speed",
+"kind": "var",
+"args": "<integer>",
+"section": "Object placement mode",
+"desc": "Sets the player's speed when moving in any direction in Object placement mode . Ranges from 1 to 128."
+},
+{
+"name": "alwaysmlook",
+"kind": "var",
+"args": "<boolean>",
+"section": "Controls",
+"desc": "If enabled, mouse aiming in first-person view is generally enabled and can be disabled by pressing the mouselook key. If disabled, mouse aiming in first-person view is generally disabled and can be enabled by pressing the mouselook key."
+},
+{
+"name": "analog",
+"kind": "var",
+"args": "<boolean>",
+"section": "Controls",
+"desc": "Turns analog control on or off. To enable/disable analog control permanently, useranalog/useranalog2 should be used instead, as this variable is modified by the game on certain occasions."
+},
+{
+"name": "chasecam",
+"kind": "var",
+"args": "<boolean>",
+"section": "Controls",
+"desc": "Turns the third-person camera on or off. If off, the first-person view is used."
+},
+{
+"name": "chasemlook",
+"kind": "var",
+"args": "<boolean>",
+"section": "Controls",
+"desc": "If enabled, mouse aiming in third-person view is generally enabled and can be disabled by pressing the mouselook key. If disabled, mouse aiming in third-person view is generally disabled and can be enabled by pressing the mouselook key."
+},
+{
+"name": "controlperkey",
+"kind": "var",
+"args": "<integer>",
+"section": "Controls",
+"desc": "Sets how many controls may be assigned to a key. 1 is one, 2 is several."
+},
+{
+"name": "crosshair",
+"kind": "var",
+"args": "<integer/string>",
+"section": "Controls",
+"desc": "Sets the type of crosshair used in first-person view:"
+},
+{
+"name": "invertmouse",
+"kind": "var",
+"args": "<boolean>",
+"section": "Controls",
+"desc": "If enabled, looking up and down with the mouse is inverted."
+},
+{
+"name": "joyscale",
+"kind": "var",
+"args": "<integer>",
+"section": "Controls",
+"desc": "Sets the scale of the input from joystick axes. If set to 0, they will behave like a gamepad controller. [ confirm? – discuss ]"
+},
+{
+"name": "mouse2port",
+"kind": "var",
+"args": "<integer/string>",
+"section": "Controls",
+"desc": "Determines the computer port of the mouse for player 2, if one is used. Values range from COM1 to COM4 , or 1 to 4. You may need to try out different values to find the port your mouse uses."
+},
+{
+"name": "mousemove",
+"kind": "var",
+"args": "<boolean>",
+"section": "Controls",
+"desc": "If enabled, moving the mouse will move the character when mouse aiming is disabled."
+},
+{
+"name": "mousesens",
+"kind": "var",
+"args": "<integer>",
+"section": "Controls",
+"desc": "Sets the sensitivity of mouse movement for turning left and right. Minimum value is 1, maximum value is 100."
+},
+{
+"name": "mouseysens",
+"kind": "var",
+"args": "<integer>",
+"section": "Controls",
+"desc": "Sets the sensitivity of mouse movement for turning up and down. Minimum value is 1, maximum value is 100."
+},
+{
+"name": "use_gamepad",
+"kind": "var",
+"args": "<integer>",
+"section": "Controls",
+"desc": "Determines the joystick device number used for the player's joystick controls . If set to 0, no joystick is used."
+},
+{
+"name": "use_mouse",
+"kind": "var",
+"args": "<integer/string>",
+"section": "Controls",
+"desc": "Determines whether the mouse can be used for controls or not. The value Force has the same effect as On ."
+},
+{
+"name": "useranalog",
+"kind": "var",
+"args": "<boolean>",
+"section": "Controls",
+"desc": "If enabled, analog control is set as the default control scheme. This variable should be used instead of analog/analog2 ."
+},
+{
+"name": "joyaxis_fire",
+"kind": "var",
+"args": "<integer>",
+"section": "Joystick axis",
+"desc": "Sets the joystick axis to use for triggering the Fire button."
+},
+{
+"name": "joyaxis_firenormal",
+"kind": "var",
+"args": "<integer>",
+"section": "Joystick axis",
+"desc": "Sets the joystick axis to use for triggering the Fire Normal button."
+},
+{
+"name": "joyaxis_jump",
+"kind": "var",
+"args": "<integer>",
+"section": "Joystick axis",
+"desc": "Sets the joystick axis to use for triggering the Jump button."
+},
+{
+"name": "joyaxis_look",
+"kind": "var",
+"args": "<integer>",
+"section": "Joystick axis",
+"desc": "Sets the joystick axis to use for looking up/down."
+},
+{
+"name": "joyaxis_move",
+"kind": "var",
+"args": "<integer>",
+"section": "Joystick axis",
+"desc": "Sets the joystick axis to use for forward/backward movement."
+},
+{
+"name": "joyaxis_side",
+"kind": "var",
+"args": "<integer>",
+"section": "Joystick axis",
+"desc": "Sets the joystick axis to use for sideways movement."
+},
+{
+"name": "joyaxis_spin",
+"kind": "var",
+"args": "<integer>",
+"section": "Joystick axis",
+"desc": "Sets the joystick axis to use for triggering the Spin button."
+},
+{
+"name": "joyaxis_turn",
+"kind": "var",
+"args": "<integer>",
+"section": "Joystick axis",
+"desc": "Sets the joystick axis to use for turning left/right."
+},
+{
+"name": "cam_dist",
+"kind": "var",
+"args": "<decimal>",
+"section": "Camera",
+"desc": "Sets the distance of the camera. You cannot use a negative value to zoom in. This distance is multiplied by 1.5 in two-player mode and by 1.2 if playing with analog control (this is cumulative, so the distance is multiplied by 1.8 if both apply). Does not apply when in 2D mode or playing as NiGHTS Super Sonic."
+},
+{
+"name": "cam_height",
+"kind": "var",
+"args": "<decimal>",
+"section": "Camera",
+"desc": "Sets the height offset of the third-person camera . This is not calculated relative to the bottom of the player, but instead the first-person camera's vertical offset (determined by the player's height)."
+},
+{
+"name": "cam_rotate",
+"kind": "var",
+"args": "<integer>",
+"section": "Camera",
+"desc": "Sets the angle of the camera's rotation. Minimum value is -720 and maximum value is 720."
+},
+{
+"name": "cam_rotspeed",
+"kind": "var",
+"args": "<integer>",
+"section": "Camera",
+"desc": "Sets the rotation speed of the camera in analog control and demo playback. Minimum value is 1, maximum value is 45."
+},
+{
+"name": "cam_speed",
+"kind": "var",
+"args": "<decimal>",
+"section": "Camera",
+"desc": "Sets the speed of the camera. Minimum value is 0, maximum value is 1. Does not apply when in 2D mode ."
+},
+{
+"name": "cam_still",
+"kind": "var",
+"args": "<boolean>",
+"section": "Camera",
+"desc": "If enabled, the camera angle stays in place instead of rotating with the player."
+},
+{
+"name": "cam_adjust",
+"kind": "var",
+"args": "<boolean>",
+"section": "Camera",
+"desc": "If enabled, the camera height will automatically be adjusted when going down a slope."
+},
+{
+"name": "defaultcolor",
+"kind": "var",
+"args": "<color>",
+"section": "Client options",
+"desc": "Sets your player's default skin color . Both the colors' names or their number values can be used."
+},
+{
+"name": "color",
+"kind": "var",
+"args": "<color>",
+"section": "Client options",
+"desc": "Sets your player's current skin color . This can only be changed in multiplayer , while the player is standing still. Both the colors' names or their number values can be used. For setting the default color, see defaultcolor/defaultcolor2"
+},
+{
+"name": "name",
+"kind": "var",
+"args": "<name>",
+"section": "Client options",
+"desc": "Sets your nickname for multiplayer. It may not start with a number. To use spaces in the name, put it between quotation marks."
+},
+{
+"name": "netstat",
+"kind": "var",
+"args": "<boolean>",
+"section": "Client options",
+"desc": "If enabled, network statistics for the client are shown on the HUD. These are updated every two seconds."
+},
+{
+"name": "defaultskinskin",
+"kind": "var",
+"args": "<name>",
+"section": "Client options",
+"desc": "Sets your player's character default skin ."
+},
+{
+"name": "skin",
+"kind": "var",
+"args": "<name>",
+"section": "Client options",
+"desc": "Sets your player's current character skin . In Single Player the player's character cannot be changed unless development mode is enabled. In multiplayer the player's character can be changed freely barring gametype-specific restrictions (see restrictskinchange ) and provided forceskin is not in effect. Regardless of gametype, character skins can only be changed while the player is standing still. Note that in Single Player, the player's color is changed to the default color for the character, e."
+},
+{
+"name": "advancemap",
+"kind": "var",
+"args": "<integer/string>",
+"section": "Server options",
+"desc": "Sets which map to advance to when a round finishes in any mode except Co-op or Single Player."
+},
+{
+"name": "allowjoin",
+"kind": "var",
+"args": "<boolean>",
+"section": "Server options",
+"desc": "If enabled, other players may join the netgame."
+},
+{
+"name": "blamecfail",
+"kind": "var",
+"args": "<boolean>",
+"section": "Server options",
+"desc": "If enabled, the host is notified when a player becomes desynchronized."
+},
+{
+"name": "downloading",
+"kind": "var",
+"args": "<boolean>",
+"section": "Server options",
+"desc": "Allows/disallows file downloading in a netgame."
+},
+{
+"name": "downloadspeed",
+"kind": "var",
+"args": "<integer>",
+"section": "Server options",
+"desc": "Determines the speed of file downloading, in packets per tic. Minimum value is 1, maximum value is 300."
+},
+{
+"name": "inttime",
+"kind": "var",
+"args": "<integer>",
+"section": "Server options",
+"desc": "Sets the intermission time between multiplayer levels, in seconds. Minimum value is 0, maximum value is 3600."
+},
+{
+"name": "joinnextround",
+"kind": "var",
+"args": "<boolean>",
+"section": "Server options",
+"desc": "If enabled, players must wait until the next round is started to join a netgame."
+},
+{
+"name": "jointimeout",
+"kind": "var",
+"args": "<integer>",
+"section": "Server options",
+"desc": "Sets how long a joining player may take to download the game state from the server, in tics. One extra tic is added to this time for each kilobyte of the game state. If this time expires, the player will be refused by the server. Minimum value is 5 tics, maximum value is 2100 tics (60 seconds)."
+},
+{
+"name": "maxping",
+"kind": "var",
+"args": "<integer>",
+"section": "Server options",
+"desc": "If the value is higher than 0, players whose ping is higher than this value will be automatically kicked."
+},
+{
+"name": "maxplayers",
+"kind": "var",
+"args": "<integer>",
+"section": "Server options",
+"desc": "Sets the maximum number of players allowed to join a netgame. Minimum value is 2, maximum value is 32."
+},
+{
+"name": "maxsend",
+"kind": "var",
+"args": "<integer>",
+"section": "Server options",
+"desc": "Sets the maximum file size (in KB) for files that can be downloaded by joining players. Files beyond this limit cannot be downloaded and players who do not have them will be refused by the server. Players downloading large files from the server will cause noticeable and sometimes disrupting lag in the netgame, so do not set this limit too high. Minimum value is 0 KB, maximum value is 204800 KB (200 MB)."
+},
+{
+"name": "mute",
+"kind": "var",
+"args": "<boolean>",
+"section": "Server options",
+"desc": "If enabled, chatting is disabled for everyone except the host and game admins."
+},
+{
+"name": "nettimeout",
+"kind": "var",
+"args": "<integer>",
+"section": "Server options",
+"desc": "Sets the maximum amount of time (in tics) to wait between packets sent before the game considers the player to have timed out from the netgame and kicks them. Minimum value is 5 tics, maximum value is 2100 tics (60 seconds)."
+},
+{
+"name": "noticedownload",
+"kind": "var",
+"args": "<boolean>",
+"section": "Server options",
+"desc": "If enabled, messages are displayed in the console when someone is downloading a file."
+},
+{
+"name": "pausepermission",
+"kind": "var",
+"args": "<integer/string>",
+"section": "Server options",
+"desc": "Determines who can pause a netgame – only the server or all clients."
+},
+{
+"name": "resynchattempts",
+"kind": "var",
+"args": "<integer>",
+"section": "Server options",
+"desc": "Sets the number of attempts to resynchronize a desynchronised player before kicking them. Minimum value is 0, maximum value is 20."
+},
+{
+"name": "servername",
+"kind": "var",
+"args": "<string>",
+"section": "Server options",
+"desc": "Sets the default name of a server to be hosted."
+},
+{
+"name": "showjoinaddress",
+"kind": "var",
+"args": "<boolean>",
+"section": "Server options",
+"desc": "If enabled, the IP addresses of joining players are shown to the host."
+},
+{
+"name": "exitmove",
+"kind": "var",
+"args": "<boolean>",
+"section": "Server options",
+"desc": "If enabled, players can move after completing the level"
+},
+{
+"name": "masterserver",
+"kind": "var",
+"args": "<string>",
+"section": "Server options",
+"desc": "Defines which Master Server SRB2 will connect to."
+},
+{
+"name": "masterserver_update_rate",
+"kind": "var",
+"args": "<integer>",
+"section": "Server options",
+"desc": "Sets how often the master server listing of a server is updated, in minutes. Minimum value is 2, maximum value is 60."
+},
+{
+"name": "masterserver_timeout",
+"kind": "var",
+"args": "<integer>",
+"section": "Server options",
+"desc": "Sets the maximum time in seconds that contacting the master server is allowed to complete."
+},
+{
+"name": "masterserver_debug",
+"kind": "var",
+"args": "<boolean>",
+"section": "Server options",
+"desc": "Enables/disables master server debug logging, the output will be saved in latest-log.txt ."
+},
+{
+"name": "masterserver_token",
+"kind": "var",
+"args": "<string>",
+"section": "Server options",
+"desc": "Used for optional authentication.with the master server."
+},
+{
+"name": "masterserver_room_id",
+"kind": "var",
+"args": "<integer>",
+"section": "Server options",
+"desc": "Specifies the Master Server Room that your server will show up in. The possible values for the official Master Server are:"
+},
+{
+"name": "allowexitlevel",
+"kind": "var",
+"args": "<boolean>",
+"section": "General netgame options",
+"desc": "If enabled, players can exit the level via Exit Sectors in Match and derived gametypes."
+},
+{
+"name": "allowmlook",
+"kind": "var",
+"args": "<boolean>",
+"section": "General netgame options",
+"desc": "If enabled, players can aim up and down with their mouse in a netgame."
+},
+{
+"name": "allowseenames",
+"kind": "var",
+"args": "<boolean>",
+"section": "General netgame options",
+"desc": "If enabled, players are allowed to enable seenames in order to see the names of other players when targeting them."
+},
+{
+"name": "allowteamchange",
+"kind": "var",
+"args": "<boolean>",
+"section": "General netgame options",
+"desc": "If enabled, players can change teams in Team Match and Capture the Flag . If disabled, players cannot change teams but are allowed to spectate. However, spectators themselves will also not be able to enter the game."
+},
+{
+"name": "autobalance",
+"kind": "var",
+"args": "<integer>",
+"section": "General netgame options",
+"desc": "If set to a value other than 0, teams are automatically balanced in CTF mode. The value (between 1 and 4) defines how great the difference in team members may be before the teams are autobalanced. Setting it to 0 turns autobalancing off."
+},
+{
+"name": "forceskin",
+"kind": "var",
+"args": "<integer>",
+"section": "General netgame options",
+"desc": "Forces all players in the game to automatically switch to the specified character skin , and prevents all players except the server from changing skins while in effect. Only the skin number is accepted, unlike the skin variable – 0 forces Sonic, 1 forces Tails, and 2 forces Knuckles. -1 or any invalid value lifts the forced skin restrictions."
+},
+{
+"name": "friendlyfire",
+"kind": "var",
+"args": "<boolean>",
+"section": "General netgame options",
+"desc": "If enabled, players can be hit by rings fired by their teammates."
+},
+{
+"name": "idletime",
+"kind": "var",
+"args": "<integer>",
+"section": "General netgame options",
+"desc": "Set the AFK timeout duration (in minutes) to determine how long a player can remain inactive before being kicked or moved to the spectator team (specified by idleaction console variable)."
+},
+{
+"name": "idleaction",
+"kind": "var",
+"args": "<integer>",
+"section": "General netgame options",
+"desc": "Specifies what the game should do with inactive players. The possible values are:"
+},
+{
+"name": "overtime",
+"kind": "var",
+"args": "<boolean>",
+"section": "General netgame options",
+"desc": "If enabled, a time-limited round of Match or CTF cannot end as long as two or more players/teams lead with the same score – it will continue in overtime until the tie is resolved."
+},
+{
+"name": "pointlimit",
+"kind": "var",
+"args": "<integer>",
+"section": "General netgame options",
+"desc": "Sets a score limit for Match, Tag, Hide & Seek, or CTF games. A value of 0 disables the score limit. The maximum value is 999999990."
+},
+{
+"name": "powerstones",
+"kind": "var",
+"args": "<boolean>",
+"section": "General netgame options",
+"desc": "In Match or CTF, determines whether Chaos Emeralds will spawn or not. If this is changed during a game, it will not take effect until the next round/map change."
+},
+{
+"name": "respawndelay",
+"kind": "var",
+"args": "<integer>",
+"section": "General netgame options",
+"desc": "In Match, CTF or Tag, this determines the minimum delay (in seconds) after death before a player can respawn with the jump button. Minimum value is 0, maximum value is 30."
+},
+{
+"name": "respawnitem",
+"kind": "var",
+"args": "<boolean>",
+"section": "General netgame options",
+"desc": "Determines whether items will respawn."
+},
+{
+"name": "scrambleonchange",
+"kind": "var",
+"args": "<integer/string>",
+"section": "General netgame options",
+"desc": "If enabled, teams in a Team Match or CTF game will be scrambled automatically each time the game advances to another map (not if you switch maps manually)."
+},
+{
+"name": "skipmapcheck",
+"kind": "var",
+"args": "<boolean>",
+"section": "General netgame options",
+"desc": "If enabled, the game will not check to see if a map supports the current gametype before warping to it."
+},
+{
+"name": "specialrings",
+"kind": "var",
+"args": "<boolean>",
+"section": "General netgame options",
+"desc": "Sets the availability of special weapon rings . If this is changed during a game, it will not take effect until the next round/map change."
+},
+{
+"name": "suddendeath",
+"kind": "var",
+"args": "<boolean>",
+"section": "General netgame options",
+"desc": "If enabled, players will die instantly when hit by a ring (even if super). Note that in Tag and Hide & Seek, there is a bug that causes points to be scored from both tagging and killing a player simultaneously, resulting in scoring 200 points per tag instead of 100. [ confirm? – discuss ]"
+},
+{
+"name": "tailspickup",
+"kind": "var",
+"args": "<boolean>",
+"section": "General netgame options",
+"desc": "If enabled, flying characters can pick up other characters. If disabled, players become solid and can stand on top of one another to form a ladder."
+},
+{
+"name": "teamscramble",
+"kind": "var",
+"args": "<integer/string>",
+"section": "General netgame options",
+"desc": "Instantly scrambles the teams in Team Match and CTF. Can also be done using the Scramble Teams option in the pause menu."
+},
+{
+"name": "timelimit",
+"kind": "var",
+"args": "<integer>",
+"section": "General netgame options",
+"desc": "Sets a time limit, in minutes, for Match, Tag, Hide & Seek, or CTF games. A value of 0 disables the time limit. The maximum value is 30 minutes."
+},
+{
+"name": "cooplives",
+"kind": "var",
+"args": "<integer/string>",
+"section": "Gametype options",
+"desc": "Controls how lives are shared between players in Coop gametypes."
+},
+{
+"name": "countdowntime",
+"kind": "var",
+"args": "<integer>",
+"section": "Gametype options",
+"desc": "Sets the countdown time (in seconds) in a Race game after the leader finishes the race. When the countdown is up, anyone yet to finish dies instantly. Minimum value is 15, maximum value is 9999."
+},
+{
+"name": "hidetime",
+"kind": "var",
+"args": "<integer>",
+"section": "Gametype options",
+"desc": "Sets the number of seconds the non-\"it\" players in Tag and Hide & Seek have for hiding before the \"it\" player can move. The value cannot exceed the time limit of the game; if the time limit is disabled, the hiding time cannot be adjusted."
+},
+{
+"name": "matchscoring",
+"kind": "var",
+"args": "<integer or type>",
+"section": "Gametype options",
+"desc": "Sets the scoring system for Match and CTF games."
+},
+{
+"name": "numlaps",
+"kind": "var",
+"args": "<integer>",
+"section": "Gametype options",
+"desc": "Sets the number of laps on a Circuit mode track. Maximum value is 50."
+},
+{
+"name": "playersforexit",
+"kind": "var",
+"args": "<integer/string>",
+"section": "Gametype options",
+"desc": "Determines whether a Coop level requires any one player ( One ), 25% ( 1/4 ), 50% ( Half ), 75% ( 3/4 ), or 100% ( All ) of all players to reach the Level End Sign before the level is finished."
+},
+{
+"name": "startinglives",
+"kind": "var",
+"args": "<integer>",
+"section": "Gametype options",
+"desc": "Sets the starting number of lives for players in Coop . A player's lives count is restored to this value when they have lost all lives in the previous stage, or the map command has been used to warp to another stage. Minimum value is 1, maximum value is 99."
+},
+{
+"name": "touchtag",
+"kind": "var",
+"args": "<boolean>",
+"section": "Gametype options",
+"desc": "If enabled, the \"it\" player(s) in Tag and Hide & Seek can tag the fleeing players simply by touching them."
+},
+{
+"name": "usemaplaps",
+"kind": "var",
+"args": "<boolean>",
+"section": "Gametype options",
+"desc": "If enabled, the level header parameter NumLaps sets the default number of laps on a Circuit mode track."
+},
+{
+"name": "competitionboxes",
+"kind": "var",
+"args": "<integer/string>",
+"section": "Multiplayer cheats",
+"desc": "Sets the type of monitors used in a Competition game. If you change this setting, it will not take effect until the next round/map change."
+},
+{
+"name": "flagtime",
+"kind": "var",
+"args": "<integer>",
+"section": "Multiplayer cheats",
+"desc": "Determines how long a CTF flag will stay in place once thrown or dropped before respawning, in seconds. The maximum value is 300."
+},
+{
+"name": "matchboxes",
+"kind": "var",
+"args": "<integer/string>",
+"section": "Multiplayer cheats",
+"desc": "Sets the type of monitors used in all multiplayer gametypes, except for Coop and Competition – Coop monitors always spawn normally, and Competition monitors are controlled by competitionboxes instead. If you change this setting, it will not take effect until the next round/map change."
+},
+{
+"name": "respawnitemtime",
+"kind": "var",
+"args": "<integer>",
+"section": "Multiplayer cheats",
+"desc": "Determines how long, in seconds, it takes for an item to respawn. Minimum value is 1, and maximum value is 300."
+},
+{
+"name": "restrictskinchange",
+"kind": "var",
+"args": "<boolean>",
+"section": "Multiplayer cheats",
+"desc": "If enabled, the following gametype -specific restrictions are applied for players attempting to change character skins mid-game:"
+},
+{
+"name": "tv_1up",
+"kind": "var",
+"args": "<integer>",
+"section": "Multiplayer cheats",
+"desc": "Sets the chance of Extra Life Monitors spawning from Random Monitors . Higher values result in a larger chance of the monitor appearing; 0 stops the monitor from appearing entirely. Minimum value is 0, and maximum value is 10."
+},
+{
+"name": "tv_bombshield",
+"kind": "var",
+"args": "<integer>",
+"section": "Multiplayer cheats",
+"desc": "Sets the chance of Armageddon Shield Monitors spawning from Random Monitors . Higher values result in a larger chance of the monitor appearing; 0 stops the monitor from appearing entirely. Minimum value is 0, and maximum value is 10."
+},
+{
+"name": "tv_eggman",
+"kind": "var",
+"args": "<integer>",
+"section": "Multiplayer cheats",
+"desc": "Sets the chance of Eggman Monitors spawning from Random Monitors . Higher values result in a larger chance of the monitor appearing; 0 stops the monitor from appearing entirely. Minimum value is 0, and maximum value is 10."
+},
+{
+"name": "tv_forceshield",
+"kind": "var",
+"args": "<integer>",
+"section": "Multiplayer cheats",
+"desc": "Sets the chance of Force Shield Monitors spawning from Random Monitors . Higher values result in a larger chance of the monitor appearing; 0 stops the monitor from appearing entirely. Minimum value is 0, and maximum value is 10."
+},
+{
+"name": "tv_invincibility",
+"kind": "var",
+"args": "<integer>",
+"section": "Multiplayer cheats",
+"desc": "Sets the chance of Invincibility Monitors spawning from Random Monitors . Higher values result in a larger chance of the monitor appearing; 0 stops the monitor from appearing entirely. Minimum value is 0, and maximum value is 10."
+},
+{
+"name": "tv_jumpshield",
+"kind": "var",
+"args": "<integer>",
+"section": "Multiplayer cheats",
+"desc": "Sets the chance of Whirlwind Shield Monitors spawning from Random Monitors . Higher values result in a larger chance of the monitor appearing; 0 stops the monitor from appearing entirely. Minimum value is 0, and maximum value is 10."
+},
+{
+"name": "tv_recycler",
+"kind": "var",
+"args": "<integer>",
+"section": "Multiplayer cheats",
+"desc": "Sets the chance of Recycler Monitors spawning from Random Monitors . Higher values result in a larger chance of the monitor appearing; 0 stops the monitor from appearing entirely. Minimum value is 0, and maximum value is 10."
+},
+{
+"name": "tv_ringshield",
+"kind": "var",
+"args": "<integer>",
+"section": "Multiplayer cheats",
+"desc": "Sets the chance of Attraction Shield Monitors spawning from Random Monitors . Higher values result in a larger chance of the monitor appearing; 0 stops the monitor from appearing entirely. Minimum value is 0, and maximum value is 10."
+},
+{
+"name": "tv_superring",
+"kind": "var",
+"args": "<integer>",
+"section": "Multiplayer cheats",
+"desc": "Sets the chance of Super Ring Monitors spawning from Random Monitors . Higher values result in a larger chance of the monitor appearing; 0 stops the monitor from appearing entirely. Minimum value is 0, and maximum value is 10."
+},
+{
+"name": "tv_supersneaker",
+"kind": "var",
+"args": "<integer>",
+"section": "Multiplayer cheats",
+"desc": "Sets the chance of Super Sneakers Monitors spawning from Random Monitors . Higher values result in a larger chance of the monitor appearing; 0 stops the monitor from appearing entirely. Minimum value is 0, and maximum value is 10."
+},
+{
+"name": "tv_teleporter",
+"kind": "var",
+"args": "<integer>",
+"section": "Multiplayer cheats",
+"desc": "Sets the chance of Teleporter Monitors spawning from Random Monitors . Higher values result in a larger chance of the monitor appearing; 0 stops the monitor from appearing entirely. Minimum value is 0, and maximum value is 10."
+},
+{
+"name": "tv_watershield",
+"kind": "var",
+"args": "<integer>",
+"section": "Multiplayer cheats",
+"desc": "Sets the chance of Elemental Shield Monitors spawning from Random Monitors . Higher values result in a larger chance of the monitor appearing; 0 stops the monitor from appearing entirely. Minimum value is 0, and maximum value is 10."
+},
+{
+"name": "gravity",
+"kind": "var",
+"args": "<decimal>",
+"section": "Miscellaneous cheats/netgame options",
+"desc": "Sets the global gravity ."
+},
+{
+"name": "killingdead",
+"kind": "var",
+"args": "<boolean>",
+"section": "Miscellaneous cheats/netgame options",
+"desc": "If enabled, hitting an enemy or popping a monitor causes damage to yourself 75% of the time. This simulates a glitch from the original Sonic Robo Blast ."
+},
+{
+"name": "ringslinger",
+"kind": "var",
+"args": "<boolean>",
+"section": "Miscellaneous cheats/netgame options",
+"desc": "If enabled, players can throw rings outside of the Match , Tag or CTF gametypes."
+},
+{
+"name": "cd_update",
+"kind": "var",
+"args": "<integer>",
+"section": "Sound",
+"desc": "This variable currently has no effect. It was intended for the DOS port, which is no longer supported."
+},
+{
+"name": "cd_volume",
+"kind": "var",
+"args": "<integer>",
+"section": "Sound",
+"desc": "Determines the volume of the background music played from a music CD. Maximum value is 31. Note: This variable has no effect as of v2.1.25."
+},
+{
+"name": "closedcaptioning",
+"kind": "var",
+"args": "<boolean>",
+"section": "Sound",
+"desc": "Toggles closed captioning for currently playing sound effects."
+},
+{
+"name": "digimusic",
+"kind": "var",
+"args": "<boolean>",
+"section": "Sound",
+"desc": "Toggles digital background music."
+},
+{
+"name": "digmusicvolume",
+"kind": "var",
+"args": "<integer>",
+"section": "Sound",
+"desc": "Determines the volume of the digital background music. Maximum value is 31."
+},
+{
+"name": "midimusic",
+"kind": "var",
+"args": "<boolean>",
+"section": "Sound",
+"desc": "Toggles MIDI background music."
+},
+{
+"name": "midimusicvolume",
+"kind": "var",
+"args": "<integer>",
+"section": "Sound",
+"desc": "Determines the volume of the MIDI background music. Maximum value is 31."
+},
+{
+"name": "precachesound",
+"kind": "var",
+"args": "<boolean>",
+"section": "Sound",
+"desc": "If enabled, the game precaches sound effects into memory before starting the game."
+},
+{
+"name": "resetmusic",
+"kind": "var",
+"args": "<boolean>",
+"section": "Sound",
+"desc": "If enabled, the music will start over in Single Player after you die, like in most Sonic games."
+},
+{
+"name": "samplerate",
+"kind": "var",
+"args": "<integer>",
+"section": "Sound",
+"desc": "Supposedly changes the sample rate of sounds played by SRB2, but currently does nothing. [ confirm? – discuss ]"
+},
+{
+"name": "snd_channels",
+"kind": "var",
+"args": "<integer>",
+"section": "Sound",
+"desc": "Sets the number of sound channels."
+},
+{
+"name": "sounds",
+"kind": "var",
+"args": "<boolean>",
+"section": "Sound",
+"desc": "Toggles sound."
+},
+{
+"name": "soundtest",
+"kind": "var",
+"args": "<integer>",
+"section": "Sound",
+"desc": "Plays the sound corresponding to the specified sound number. Refer to the list of sounds for a complete list of sounds and their numbers."
+},
+{
+"name": "soundvolume",
+"kind": "var",
+"args": "<integer>",
+"section": "Sound",
+"desc": "Determines the volume of sound effects. Maximum value is 31."
+},
+{
+"name": "stereoreverse",
+"kind": "var",
+"args": "<boolean>",
+"section": "Sound",
+"desc": "If enabled, the stereo channels are reversed."
+},
+{
+"name": "surround",
+"kind": "var",
+"args": "<boolean>",
+"section": "Sound",
+"desc": "Toggles surround sound."
+},
+{
+"name": "drawdist",
+"kind": "var",
+"args": "<integer/string>",
+"section": "Video",
+"desc": "Sets the maximum distance (in fracunits) from the player at which sprites are drawn – sprites beyond the specified distance (unless set to \" Infinite \") will be completely invisible to the player. Only certain distances are accepted by this variable, listed below:"
+},
+{
+"name": "drawdist_nights",
+"kind": "var",
+"args": "<integer/string>",
+"section": "Video",
+"desc": "Sets the maximum distance (in fracunits) from the player at which sprites are drawn in NiGHTS levels – sprites beyond the specified distance (unless set to \" Infinite \") will be completely invisible to the player. Only certain distances are accepted by this variable, listed below:"
+},
+{
+"name": "drawdist_precip",
+"kind": "var",
+"args": "<integer/string>",
+"section": "Video",
+"desc": "Sets the maximum distance (in fracunits) from the player at which precipitation (i.e. rain, snow) is drawn – precipitation beyond the specified distance (unless set to \" Infinite \") will be completely invisible to the player. Only certain distances are accepted by this variable, listed below:"
+},
+{
+"name": "fov",
+"kind": "var",
+"args": "<decimal>",
+"section": "Video",
+"desc": "Sets the field of view. It affects the focal length (in degrees) of the camera . For example, smaller values make the camera focus on a smaller portion of the world, similarly to a telescopic sight or scope. Minimum value is 60, maximum value is 179."
+},
+{
+"name": "fullscreen",
+"kind": "var",
+"args": "<boolean>",
+"section": "Video",
+"desc": "Determines whether the game is displayed in fullscreen or windowed mode."
+},
+{
+"name": "gamma",
+"kind": "var",
+"args": "<integer>",
+"section": "Video",
+"desc": "Sets the game's overall brightness. Maximum value is 5, minimum value is -15."
+},
+{
+"name": "homremoval",
+"kind": "var",
+"args": "<yes/no/flash>",
+"section": "Video",
+"desc": "If set to yes , all occurrences of the hall of mirrors glitch on the screen will be replaced with a solid black color. If set to flash , these areas will additionally flash red continuously."
+},
+{
+"name": "maxportals",
+"kind": "var",
+"args": "<integer>",
+"section": "Video",
+"desc": "Sets the maximum recursive depth of visual portal rendering. 0 disables visual portals, the maximum value is 12. Disclaimer: Setting this value too high can cause severe lag or memory overflow crashes in complicated visual portal setups!"
+},
+{
+"name": "renderview",
+"kind": "var",
+"args": "<boolean>",
+"section": "Video",
+"desc": "If disabled, the view of the level will no longer be rendered."
+},
+{
+"name": "scr_depth",
+"kind": "var",
+"args": "<integer/string>",
+"section": "Video",
+"desc": "Sets the default graphical depth of the screen resolution."
+},
+{
+"name": "scr_height",
+"kind": "var",
+"args": "<integer>",
+"section": "Video",
+"desc": "Sets the default screen resolution height. Make sure to use only video modes supported by your computer or SRB2."
+},
+{
+"name": "scr_width",
+"kind": "var",
+"args": "<integer>",
+"section": "Video",
+"desc": "Sets the default screen resolution width. Make sure to use only video modes supported by your computer or SRB2."
+},
+{
+"name": "showfps",
+"kind": "var",
+"args": "<boolean>",
+"section": "Video",
+"desc": "If enabled, a framerate counter is displayed on the HUD ."
+},
+{
+"name": "skybox",
+"kind": "var",
+"args": "<boolean>",
+"section": "Video",
+"desc": "Toggles whether or not skyboxes are rendered."
+},
+{
+"name": "stretch",
+"kind": "var",
+"args": "<boolean>",
+"section": "Video",
+"desc": "Does nothing. Was supposed to determine whether to allow screen resolution width-height ratios other than the standard (320:200, or 1.6:1). If disabled, the resolution height would be adjusted according to its width to keep the standard ratio; if enabled, the height would remain unchanged."
+},
+{
+"name": "translucency",
+"kind": "var",
+"args": "<boolean>",
+"section": "Video",
+"desc": "Turns sprite translucency on or off."
+},
+{
+"name": "vid_wait",
+"kind": "var",
+"args": "<boolean>",
+"section": "Video",
+"desc": "Enables/disables vertical synchronization ."
+},
+{
+"name": "fpscap",
+"kind": "var",
+"args": "<integer/string>",
+"section": "Video",
+"desc": "Limits the maximum number of frames-per-second that can be rendered. Minimum value is TICRATE , maximum value is 300. Certain values are also accepted by this variable, listed below:"
+},
+{
+"name": "gr_models",
+"kind": "var",
+"args": "<off/on>",
+"section": "OpenGL",
+"desc": "Determines whether models are rendered."
+},
+{
+"name": "gr_modelinterpolation",
+"kind": "var",
+"args": "<off/sometimes/always>",
+"section": "OpenGL",
+"desc": "Determines model interpolation behavior. If set to Sometimes , only specified animations will interpolate their frames."
+},
+{
+"name": "gr_spritebillboarding",
+"kind": "var",
+"args": "<boolean>",
+"section": "OpenGL",
+"desc": "Determines whether sprites will have the billboarding effect applied to them or not. This means that, if enabled, they will appear to rotate to face the camera vertically if they are viewed from above or below; otherwise, they will appear as flat polygons when seen from above or below."
+},
+{
+"name": "gr_skydome",
+"kind": "var",
+"args": "<boolean>",
+"section": "OpenGL",
+"desc": "Determines whether or not to render the sky texture as a dome."
+},
+{
+"name": "gr_filtermode",
+"kind": "var",
+"args": "<mode>",
+"section": "OpenGL",
+"desc": "Sets the texture filtering mode."
+},
+{
+"name": "gr_anisotropicmode",
+"kind": "var",
+"args": "<integer>",
+"section": "OpenGL",
+"desc": "Sets the degree of anisotropic filtering . Minimum value is 1, maximum is defined by the GPU ( GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT ). Note that this variable can only be modified in-game if SRB2 was ever running in OpenGL."
+},
+{
+"name": "gr_fovchange",
+"kind": "var",
+"args": "<boolean>",
+"section": "OpenGL",
+"desc": "If enabled, the field of view widens as the player's speed increases to simulate the character getting further away from the camera."
+},
+{
+"name": "gr_solvetjoin",
+"kind": "var",
+"args": "<boolean>",
+"section": "OpenGL",
+"desc": "Determines whether or not to solve T-joins."
+},
+{
+"name": "gr_allowclientshaders",
+"kind": "var",
+"args": "<boolean>",
+"section": "OpenGL",
+"desc": "Sets whenever or not custom OpenGL Shaders are allowed to used in the server."
+},
+{
+"name": "gr_shaders",
+"kind": "var",
+"args": "<integer/string>",
+"section": "OpenGL",
+"desc": "Determines whether or not shaders are enabled. If set to Ignore custom shaders , only built-in shaders will be used."
+},
+{
+"name": "cpusleep",
+"kind": "var",
+"args": "<integer>",
+"section": "CPU",
+"desc": "Calms down a number of common processes to reserve CPU power for SRB2, by telling the processes to sleep for a set period of time. Highly recommended for older computers or computers struggling with their OS. Values range from -1 to 28, -1 being off and 0 to 28 being the time to sleep, measured in milliseconds."
+},
+{
+"name": "_",
+"kind": "cmd",
+"args": "\"> alias <name> <command>",
+"section": "Utility commands",
+"desc": "Creates an alias for another console command or a sequence of commands. For instance, alias sonic \"skin sonic; color blue\" would create a new console command sonic that turns the player into a blue Sonic. This command is especially useful in scripts to create a shorthand for a sequence of commands that is used multiple times. Note that alias commands are not saved when the game is closed. To create a permanent alias, put it in the autoexec.cfg file."
+},
+{
+"name": "cls",
+"kind": "cmd",
+"args": "",
+"section": "Utility commands",
+"desc": "Clears the console buffer."
+},
+{
+"name": "help",
+"kind": "cmd",
+"args": "[<command/variable>]",
+"section": "Utility commands",
+"desc": "If used without an argument, displays a list of console commands and variables (some variables will not be displayed, such as a few cheats). If provided with the name of a command/variable, detailed info for that command/variable will be provided, if available. For variables, it also displays a list of possible values, the current value and the variable's flags."
+},
+{
+"name": "toggle",
+"kind": "cmd",
+"args": "<variable>",
+"section": "Utility commands",
+"desc": "Toggles the value of the given console variable. This only works with variables that take boolean values (i.e. yes/no or on/off)."
+},
+{
+"name": "wait",
+"kind": "cmd",
+"args": "[<tics>]",
+"section": "Utility commands",
+"desc": "Waits for the specified number of game tics before executing the next console command. One second consists of 35 tics. If no number is specified, a one tic delay is used by default. There is generally no reason to use this directly, but it is useful to create delays in scripts ."
+},
+{
+"name": "addfile",
+"kind": "cmd",
+"args": "<filename>",
+"section": "File management",
+"desc": "Adds a WAD , PK3 , SOC , or Lua script to the game. The file extension must be specified, e.g., addfile test.wad instead of addfile test . After adding a file, the game will immediately be marked as modified, unless it is a WAD that contains only music and sound effects."
+},
+{
+"name": "changeconfig",
+"kind": "cmd",
+"args": "<filename>",
+"section": "File management",
+"desc": "Saves the current configuration file and loads the specified one. The file name is required to end with .cfg – if the file extension is not specified or is not the correct one, the game will automatically modify the file name given to end with .cfg anyway."
+},
+{
+"name": "loadconfig",
+"kind": "cmd",
+"args": "<filename>",
+"section": "File management",
+"desc": "Loads the specified configuration file without saving the current one. The file name is required to end with .cfg – if the file extension is not specified or is not the correct one, the game will automatically modify the file name given to end with .cfg anyway."
+},
+{
+"name": "runsoc",
+"kind": "cmd",
+"args": "<filename or lumpname>",
+"section": "File management",
+"desc": "Loads the specified SOC . This can be either a stand-alone file (requires the file name to end with .soc , which must be specified) or a lump in one of the currently loaded WAD or PK3 files."
+},
+{
+"name": "displayplayer",
+"kind": "cmd",
+"args": "",
+"section": "General game commands",
+"desc": "Shows the number of the player who is currently being displayed."
+},
+{
+"name": "exitgame",
+"kind": "cmd",
+"args": "",
+"section": "General game commands",
+"desc": "Exits the current game and returns to the title screen."
+},
+{
+"name": "gametype",
+"kind": "cmd",
+"args": "",
+"section": "General game commands",
+"desc": "Shows the current gametype as one of the following numbers:"
+},
+{
+"name": "map",
+"kind": "cmd",
+"args": "map<value>",
+"section": "General game commands",
+"desc": "Changes the level. For instance, to warp to Greenflower Zone Act 1 , type map 1 . You can also type the zone's abbrevation, such as map gfz1 . For the map numbers of official SRB2 maps, consult the list of levels . If you want to know the map number of a custom map, open the file containing the map in a lump editor and look for the SOC lump containing the level header (which is often the MAINCFG lump). In that lump, search for the map name and look at its corresponding map number. The map comman"
+},
+{
+"name": "manual",
+"kind": "cmd",
+"args": "",
+"section": "General game commands",
+"desc": "Opens the game's manual."
+},
+{
+"name": "pause",
+"kind": "cmd",
+"args": "[<0/1>]",
+"section": "General game commands",
+"desc": "Pauses the game. Reuse it to unpause. If a number is given, the game will pause if 1 is supplied or unpause if 0 is supplied, but not vice versa."
+},
+{
+"name": "playintro",
+"kind": "cmd",
+"args": "",
+"section": "General game commands",
+"desc": "Replays the opening intro."
+},
+{
+"name": "quit",
+"kind": "cmd",
+"args": "",
+"section": "General game commands",
+"desc": "Exits the game immediately, skipping all menus and displays."
+},
+{
+"name": "resetcamera",
+"kind": "cmd",
+"args": "",
+"section": "General game commands",
+"desc": "Resets the camera 's position and properties. The player's \"reset camera\" key has the same function as this."
+},
+{
+"name": "retry",
+"kind": "cmd",
+"args": "",
+"section": "General game commands",
+"desc": "Retries the current level from the last Star Post . The player needs to have at least one life left to do this, and one life will be subtracted from their count."
+},
+{
+"name": "showmap",
+"kind": "cmd",
+"args": "",
+"section": "General game commands",
+"desc": "Shows the map number and the name (excluding \"Zone\" and \"Act\") of the map currently being played."
+},
+{
+"name": "devmode",
+"kind": "cmd",
+"args": "<integer>",
+"section": "Development tools/Game cheats",
+"desc": "Activates development mode and sets its flags. See development mode for deeper info."
+},
+{
+"name": "exitlevel",
+"kind": "cmd",
+"args": "",
+"section": "Development tools/Game cheats",
+"desc": "Finishes the current level and warps to the next one (after the score tally/intermission screen)."
+},
+{
+"name": "getallemeralds",
+"kind": "cmd",
+"args": "",
+"section": "Development tools/Game cheats",
+"desc": "Gives the player all 7 Chaos Emeralds ."
+},
+{
+"name": "god",
+"kind": "cmd",
+"args": "",
+"section": "Development tools/Game cheats",
+"desc": "Makes the player invincible to everything, including instant kill hazards. Use the command again to make the player vulnerable again."
+},
+{
+"name": "gravflip",
+"kind": "cmd",
+"args": "",
+"section": "Development tools/Game cheats",
+"desc": "Flips the direction of gravity ."
+},
+{
+"name": "hurtme",
+"kind": "cmd",
+"args": "<value>",
+"section": "Development tools/Game cheats",
+"desc": "Hurts the player. The only value with special significance is 10000, which will instantly kill the player."
+},
+{
+"name": "jumptoaxis",
+"kind": "cmd",
+"args": "<axis number>",
+"section": "Development tools/Game cheats",
+"desc": "In NiGHTS , this teleports the player to the specified Axis ."
+},
+{
+"name": "noclip",
+"kind": "cmd",
+"args": "",
+"section": "Development tools/Game cheats",
+"desc": "Turns off the player's collision, allowing them to walk through walls. Deaths by crushing are also prevented, but all other types of damage are still in effect. Use the command again to re-enable collision."
+},
+{
+"name": "notarget",
+"kind": "cmd",
+"args": "",
+"section": "Development tools/Game cheats",
+"desc": "Prevents any enemies that have not already targeted the player from doing so, allowing the player to freely move around the enemies without being attacked by them. Use the command again to re-enable targeting."
+},
+{
+"name": "objectplace",
+"kind": "cmd",
+"args": "[-silent]",
+"section": "Development tools/Game cheats",
+"desc": "Activates Object placement mode . Use the command again to deactivate it. The parameter -silent suppresses the on-screen text explaining the controls."
+},
+{
+"name": "resetemeralds",
+"kind": "cmd",
+"args": "",
+"section": "Development tools/Game cheats",
+"desc": "Removes all Chaos Emeralds from the player's possession."
+},
+{
+"name": "savecheckpoint",
+"kind": "cmd",
+"args": "",
+"section": "Development tools/Game cheats",
+"desc": "Creates a temporary and invisible Star Post at the player's current location. The Star Post disappears once the player exits the map or activates another Star Post."
+},
+{
+"name": "scale",
+"kind": "cmd",
+"args": "<decimal>",
+"section": "Development tools/Game cheats",
+"desc": "Scales the player to a fraction of their original size – 1 is normal size, 0.5 is half the normal size, 2 is twice the normal size, and so forth."
+},
+{
+"name": "setcontinues",
+"kind": "cmd",
+"args": "<integer>",
+"section": "Development tools/Game cheats",
+"desc": "Sets the number of continues the player has."
+},
+{
+"name": "setlives",
+"kind": "cmd",
+"args": "<integer>",
+"section": "Development tools/Game cheats",
+"desc": "Sets the number of lives the player has."
+},
+{
+"name": "setrings",
+"kind": "cmd",
+"args": "<integer>",
+"section": "Development tools/Game cheats",
+"desc": "Sets the number of rings the player is carrying."
+},
+{
+"name": "skynum",
+"kind": "cmd",
+"args": "<number>",
+"section": "Development tools/Game cheats",
+"desc": "Changes the sky. Refer to Flats and textures/Skies for a list of skies with samples and slot numbers."
+},
+{
+"name": "weather",
+"kind": "cmd",
+"args": "<number>",
+"section": "Development tools/Game cheats",
+"desc": "Changes the weather. Refer to Level header > Weather for a list of weather types with slot numbers."
+},
+{
+"name": "toggletwod",
+"kind": "cmd",
+"args": "",
+"section": "Development tools/Game cheats",
+"desc": "Toggles between 2D mode and 3D mode. Note that this won't have any effect if the level header is set to use 2D mode."
+},
+{
+"name": "clearbans",
+"kind": "cmd",
+"args": "",
+"section": "Server/admin commands",
+"desc": "Clears all bans. Users that were banned will be able to join again."
+},
+{
+"name": "clearscores",
+"kind": "cmd",
+"args": "",
+"section": "Server/admin commands",
+"desc": "Resets all players' scores to 0. This also works in Single Player games."
+},
+{
+"name": "csay",
+"kind": "cmd",
+"args": "<message>",
+"section": "Server/admin commands",
+"desc": "Sends a message to everyone within a netgame which is displayed in the center of the screen. Backslashes indicate line breaks."
+},
+{
+"name": "demote",
+"kind": "cmd",
+"args": "<node>",
+"section": "Server/admin commands",
+"desc": "Removes administrative privileges from a player in a netgame."
+},
+{
+"name": "motd",
+"kind": "cmd",
+"args": "<message>",
+"section": "Server/admin commands",
+"desc": "Sets a \"Message of the day\" that is displayed in a player's chat log when they join your server. Note that semicolons ( ; ) are not allowed in the message, and will be removed if found. Due to a glitch, sometimes trying to change the message after it was already set will instead cause the new message to be appended to the end of the previous one."
+},
+{
+"name": "password",
+"kind": "cmd",
+"args": "<value>",
+"section": "Server/admin commands",
+"desc": "Changes the server password to the given value."
+},
+{
+"name": "promote",
+"kind": "cmd",
+"args": "<node>",
+"section": "Server/admin commands",
+"desc": "Gives a player administrative privileges in a netgame."
+},
+{
+"name": "reloadbans",
+"kind": "cmd",
+"args": "",
+"section": "Server/admin commands",
+"desc": "Reloads an existing ban.txt and bans all of the included IP addresses."
+},
+{
+"name": "showbanlist",
+"kind": "cmd",
+"args": "",
+"section": "Server/admin commands",
+"desc": "Lists all bans made in-game and in ban.txt along with the ban reasons."
+},
+{
+"name": "masterserver_update",
+"kind": "cmd",
+"args": "",
+"section": "Server/admin commands",
+"desc": "Force the Master Server listing of a server to be updated."
+},
+{
+"name": "changeteam",
+"kind": "cmd",
+"args": "<red/blue/spectator/playing>",
+"section": "Client commands",
+"desc": "Changes the team you are currently playing for. You can also use this command to become a spectator, clearing your score and turning you into an invisible bystander, or to enter the game after spectating. Does not work in Co-op, Race or Competition."
+},
+{
+"name": "connect",
+"kind": "cmd",
+"args": "<parameters>",
+"section": "Client commands",
+"desc": "Used to connect to a server, depending on the parameters used:"
+},
+{
+"name": "listserv",
+"kind": "cmd",
+"args": "",
+"section": "Client commands",
+"desc": "Retrieves and displays a list of hosted games from the Master Server ."
+},
+{
+"name": "login",
+"kind": "cmd",
+"args": "<password>",
+"section": "Client commands",
+"desc": "Attempts to log in as a netgame administrator. The password is set by the host."
+},
+{
+"name": "cheats",
+"kind": "cmd",
+"args": "[<off>]",
+"section": "Miscellaneous netgame/multiplayer commands",
+"desc": "When used without a parameter, states whether any cheat-marked variables have been modified. Entering cheats off will revert all cheat-marked variables to their default values."
+},
+{
+"name": "getplayernum",
+"kind": "cmd",
+"args": "",
+"section": "Miscellaneous netgame/multiplayer commands",
+"desc": "Lists all of the players in the game, their player numbers, and their node numbers."
+},
+{
+"name": "nodes",
+"kind": "cmd",
+"args": "",
+"section": "Miscellaneous netgame/multiplayer commands",
+"desc": "Lists all of the players in the game and their node numbers."
+},
+{
+"name": "ping",
+"kind": "cmd",
+"args": "",
+"section": "Miscellaneous netgame/multiplayer commands",
+"desc": "Lists the ping for all other players, i.e., the time it takes to send a packet from the server to the player and back."
+},
+{
+"name": "say",
+"kind": "cmd",
+"args": "<message>",
+"section": "Miscellaneous netgame/multiplayer commands",
+"desc": "Sends a chat message to all players."
+},
+{
+"name": "sayteam",
+"kind": "cmd",
+"args": "<message>",
+"section": "Miscellaneous netgame/multiplayer commands",
+"desc": "Sends a chat message to your team. Only meant to be used in team-based gametypes like Team Match, Tag, Hide & Seek, or CTF. The host of a dedicated server cannot use this, since they are not playing themselves and therefore do not belong to any team."
+},
+{
+"name": "showscores",
+"kind": "cmd",
+"args": "",
+"section": "Miscellaneous netgame/multiplayer commands",
+"desc": "Shows the game scores of all players. Also displays the point limit of the game."
+},
+{
+"name": "showtime",
+"kind": "cmd",
+"args": "",
+"section": "Miscellaneous netgame/multiplayer commands",
+"desc": "Shows the time and, if applicable, the time limit of the current game."
+},
+{
+"name": "suicide",
+"kind": "cmd",
+"args": "",
+"section": "Miscellaneous netgame/multiplayer commands",
+"desc": "Kills the player and subtracts one life. Useful if you've become stuck in an area you can't escape from."
+},
+{
+"name": "vid_info",
+"kind": "cmd",
+"args": "",
+"section": "Video",
+"desc": "Displays information about the current engine mode and video mode."
+},
+{
+"name": "vid_mode",
+"kind": "cmd",
+"args": "<mode number>",
+"section": "Video",
+"desc": "Sets the video mode. To see which video mode corresponds to which number, use vid_modelist ."
+},
+{
+"name": "vid_modelist",
+"kind": "cmd",
+"args": "",
+"section": "Video",
+"desc": "Lists all available video modes along with their screen resolutions and their corresponding mode numbers."
+},
+{
+"name": "vid_nummodes",
+"kind": "cmd",
+"args": "",
+"section": "Video",
+"desc": "Shows the number of available video modes."
+},
+{
+"name": "countmobjs",
+"kind": "cmd",
+"args": "[<type>]",
+"section": "Technical information",
+"desc": "Counts all Objects of the specified Object type in the level and displays the total in the console. The Object type must be specified as a number; consult List of Object types for the numbers corresponding to the Object types. If no Object type is specified, the total number of Objects is listed for each Object type present in the map. Precipitation Objects such as rain or snow will not be counted."
+},
+{
+"name": "gr_stats",
+"kind": "cmd",
+"args": "",
+"section": "Technical information",
+"desc": "Displays OpenGL-specific memory usage statistics."
+},
+{
+"name": "isgamemodified",
+"kind": "cmd",
+"args": "",
+"section": "Technical information",
+"desc": "Checks if the game is modified and if secrets can be unlocked, and displays the result in the console."
+},
+{
+"name": "listwad",
+"kind": "cmd",
+"args": "",
+"section": "Technical information",
+"desc": "Displays a list of WAD and PK3 files loaded in the game, in inverse order to the order in which they were loaded. The total number of files loaded is displayed at the top of the list. Files listed with file numbers colored yellow are the resource files for SRB2. \"IWAD\" is displayed next to the IWAD ( srb2.pk3 ). All other resource files are listed with an asterisk ( * ) preceding the file number."
+},
+{
+"name": "mapmd5",
+"kind": "cmd",
+"args": "",
+"section": "Technical information",
+"desc": "Displays the MD5 checksum of the current map."
+},
+{
+"name": "memfree",
+"kind": "cmd",
+"args": "",
+"section": "Technical information",
+"desc": "Displays memory usage statistics."
+},
+{
+"name": "mod_details",
+"kind": "cmd",
+"args": "",
+"section": "Technical information",
+"desc": "Lists the ID, version and codebase of the executable currently used. In SRB2 v2.2.13, this will print \"Mod ID: 18\", \"Mod Version: 54\", and \"Code Base: 220\"."
+},
+{
+"name": "numthinkers",
+"kind": "cmd",
+"args": "<type>",
+"section": "Technical information",
+"desc": "Counts the number of thinkers of a particular type, listed below. Useful for development and code testing."
+},
+{
+"name": "version",
+"kind": "cmd",
+"args": "",
+"section": "Technical information",
+"desc": "Displays the version of SRB2 being used, along with the date, time and revision number at which the executable was compiled, along with the interface, operating system and the processor architecture. For example, on the 32-bit version of SRB2 v2.2.0 for Windows, this will print:"
+},
+{
+"name": "cecho",
+"kind": "cmd",
+"args": "<message>",
+"section": "Echo",
+"desc": "Displays the specified message in the center of the screen. Backslashes indicate line breaks."
+},
+{
+"name": "cechoduration",
+"kind": "cmd",
+"args": "<seconds>",
+"section": "Echo",
+"desc": "Changes the duration that a cecho message stays on screen, in seconds."
+},
+{
+"name": "cechoflags",
+"kind": "cmd",
+"args": "<integer>",
+"section": "Echo",
+"desc": "Sets the flags for cecho . Hexadecimal numbers are also accepted as values, provided the input is prefixed with 0x . See Video flags for the full list of flags and their values."
+},
+{
+"name": "echo",
+"kind": "cmd",
+"args": "<message>",
+"section": "Echo",
+"desc": "Displays the specified message in the console. Useful for scripting."
+},
+{
+"name": "playdemo",
+"kind": "cmd",
+"args": "<filename>",
+"section": "Screenshots, movies and demos",
+"desc": "Plays back a recorded demo ."
+},
+{
+"name": "screenshot",
+"kind": "cmd",
+"args": "",
+"section": "Screenshots, movies and demos",
+"desc": "Takes a screenshot of the display. Note that if you type this command directly into the console, the console will appear in the screenshot. To avoid this, use the shortcut F8 or bind the command to a key."
+},
+{
+"name": "startmovie",
+"kind": "cmd",
+"args": "",
+"section": "Screenshots, movies and demos",
+"desc": "Creates a movie of the game, which will output as a GIF, animated PNG or multiple screenshots depending on the mode set by moviemode_mode ."
+},
+{
+"name": "stopdemo",
+"kind": "cmd",
+"args": "",
+"section": "Screenshots, movies and demos",
+"desc": "Stops the currently running demo ."
+},
+{
+"name": "stopmovie",
+"kind": "cmd",
+"args": "",
+"section": "Screenshots, movies and demos",
+"desc": "Stops recording the movie started with startmovie ."
+},
+{
+"name": "restartaudio",
+"kind": "cmd",
+"args": "",
+"section": "Sound",
+"desc": "Restarts the game's audio playback system. If you changed your audio output device mid-game, use this command to make the game switch to the new device."
+},
+{
+"name": "http_source",
+"kind": "var",
+"args": "<url>",
+"section": "Server options",
+"desc": "URL of a website with the server's addons. Joining players download missing addons from <url>/<file name> over HTTP instead of from the server."
+}
+]

@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=SRB2 Autonomi Launcher
+Comment=Download and launch SRB2 mods from the Autonomi network
+Exec=srb2al
+Icon=srb2al
+Terminal=false
+Categories=Game;
+# Must match APPLICATION_ID in linux/CMakeLists.txt (the runner sets it as
+# the program name / Wayland app_id), so the window gets this icon in the taskbar.
+StartupWMClass=com.srb2.autonomi_launcher

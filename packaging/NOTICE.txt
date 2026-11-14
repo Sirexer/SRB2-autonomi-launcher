@@ -1,0 +1,15 @@
+SRB2 Autonomi Launcher
+Universal launcher for SRB2—its main feature is downloading add-ons using
+Autonomi. Free software under the GNU General Public License, version 2.
+
+Data included in the launcher
+-----------------------------
+
+IP Geolocation by DB-IP - https://db-ip.com
+  The countries of the servers on the Servers tab come from the DB-IP
+  "IP to Country Lite" database, licensed under the Creative Commons
+  Attribution 4.0 International License:
+  https://creativecommons.org/licenses/by/4.0/
+
+Country flags: flag-icons - https://github.com/lipis/flag-icons
+  Copyright (c) 2013 Panayiotis Lipiridis. MIT License.
