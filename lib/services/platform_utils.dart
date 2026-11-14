@@ -15,6 +15,38 @@ class PlatformUtils {
   static p.Context _ctx(bool windows) => windows ? p.windows : p.posix;
 
   /// Команда запуска SRB2 по умолчанию.
+  /// Есть ли программа [name] (без пути) в PATH — так её найдёт запуск без
+  /// оболочки. [env] — окружение запуска (null — как у лаунчера).
+  static bool onPath(String name, [Map<String, String>? env]) {
+    final path = (env ?? Platform.environment)['PATH'] ?? '';
+    for (final dir in path.split(Platform.isWindows ? ';' : ':')) {
+      if (dir.isEmpty) continue;
+      if (File(p.join(dir, name)).existsSync()) return true;
+    }
+    return false;
+  }
+
+  /// Linux/macOS: команда [name], которой нет в PATH, но которую знает
+  /// оболочка пользователя ($SHELL) — alias или функция из ~/.bashrc,
+  /// ~/.zshrc, config.fish. Тогда игра запускается через эту оболочку:
+  /// (оболочка, её аргументы — перед аргументами игры). null — не знает.
+  static Future<(String, List<String>)?> shellCommand(String name, [Map<String, String>? env]) async {
+    if (Platform.isWindows || !RegExp(r'^[A-Za-z0-9._+-]+$').hasMatch(name)) return null;
+    final shell = (env ?? Platform.environment)['SHELL'] ?? '/bin/sh';
+    final fish = p.basename(shell) == 'fish';
+    try {
+      // Интерактивная (-i): только она читает ~/.bashrc / ~/.zshrc с alias.
+      final r = await Process.run(shell, ['-ic', fish ? 'type -q $name' : 'type $name'],
+              environment: env, includeParentEnvironment: env == null)
+          .timeout(const Duration(seconds: 5));
+      if (r.exitCode != 0) return null;
+    } catch (_) {
+      return null; // нет такой оболочки, зависла и т.п.
+    }
+    // Аргументы игры — отдельно, без разбора оболочкой: "$@" (у fish — $argv).
+    return fish ? (shell, ['-ic', '$name \$argv']) : (shell, ['-ic', '$name "\$@"', name]);
+  }
+
   static String defaultLaunchCommand({bool? windows, GameDef game = Games.srb2}) =>
       game.defaultCommand(windows: windows);
 

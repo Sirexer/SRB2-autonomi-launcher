@@ -579,7 +579,7 @@ class MusicPlayer extends ChangeNotifier {
       // Звук не распаковывается в память целиком (LoadMode.disk): движок
       // декодирует его по ходу — в разы меньше памяти, чем PCM всего трека.
       final soloud = SoLoud.instance;
-      final AudioSource source;
+      AudioSource source;
       if (data.format.isRendered) {
         final rendered = await _rendered(t, data, token);
         if (rendered == null || token != _token) return;
@@ -590,7 +590,19 @@ class MusicPlayer extends ChangeNotifier {
             ? await soloud.loadFile(path, mode: LoadMode.disk)
             : await soloud.loadMem('${t.key}#$subtrack.wav', bytes!, mode: LoadMode.disk);
       } else {
-        source = await soloud.loadMem('${t.key}.${data.format.extension}', data.bytes, mode: LoadMode.disk);
+        try {
+          source = await soloud.loadMem('${t.key}.${data.format.extension}', data.bytes, mode: LoadMode.disk);
+        } catch (e) {
+          // Встроенный декодер (stb_vorbis) не читает часть OGG — например,
+          // старые с floor 0; их раскодирует libvorbisfile (в WAV, в кэш).
+          if (data.format != MusicFormat.ogg) rethrow;
+          final decoded = await _rendered(t, data, token, vorbis: true);
+          if (decoded == null || token != _token) return;
+          final (path, bytes, _) = decoded;
+          source = path != null
+              ? await soloud.loadFile(path, mode: LoadMode.disk)
+              : await soloud.loadMem('${t.key}.wav', bytes!, mode: LoadMode.disk);
+        }
       }
       if (token != _token) {
         await soloud.disposeSource(source);
@@ -628,7 +640,7 @@ class MusicPlayer extends ChangeNotifier {
   /// приставок): файл WAV в кэше на диске (движок читает его потоком, в
   /// памяти он не лежит) или, если записать не вышло, — байты. Третье — точка
   /// петли из файла.
-  Future<(String?, Uint8List?, Duration?)?> _rendered(MusicTrack t, MusicData data, int token) {
+  Future<(String?, Uint8List?, Duration?)?> _rendered(MusicTrack t, MusicData data, int token, {bool vorbis = false}) {
     void progress(double x) {
       if (token != _token) return;
       renderProgress = x;
@@ -636,6 +648,7 @@ class MusicPlayer extends ChangeNotifier {
     }
 
     return _renderWav(t, data, subtrack,
+        vorbis: vorbis,
         onStart: () {
           renderProgress = 0;
           notifyListeners();
@@ -649,6 +662,7 @@ class MusicPlayer extends ChangeNotifier {
     MusicTrack t,
     MusicData data,
     int subtrack, {
+    bool vorbis = false,
     void Function()? onStart,
     void Function(double progress)? onProgress,
     bool Function()? cancelled,
@@ -656,7 +670,8 @@ class MusicPlayer extends ChangeNotifier {
     final format = data.format;
     final font = format.isSynth ? (sf2Path == null ? 'builtin' : await _stamp(sf2Path!)) : '';
     final key = md5
-        .convert(utf8.encode('$_renderCacheVersion|${_stamps[t.file] ?? t.file}|${t.entry}|${format.name}|$font|$subtrack'))
+        .convert(utf8.encode(
+            '$_renderCacheVersion|${_stamps[t.file] ?? t.file}|${t.entry}|${format.name}|$font|$subtrack${vorbis ? '|vorbisfile' : ''}'))
         .toString();
     final dir = await _dataDir('music_render');
     final wavFile = File(p.join(dir.path, '$key.wav')), loopFile = File(p.join(dir.path, '$key.loop'));
@@ -671,7 +686,14 @@ class MusicPlayer extends ChangeNotifier {
     void progress(double x) => onProgress?.call(x);
     onStart?.call();
     final RenderedMusic rendered;
-    if (format.isSynth) {
+    if (vorbis) {
+      final lib = NativeMusic.findVorbisFile(libraryDirs);
+      if (lib == null) {
+        throw UnsupportedError('This OGG file needs libvorbisfile, and it was not found. It comes with the launcher '
+            'for Windows (next to libopenmpt); on Linux install the libvorbisfile3 package.');
+      }
+      rendered = (await NativeMusic.decodeVorbisInBackground(data.bytes, lib, onProgress: progress, cancelled: cancelled), null);
+    } else if (format.isSynth) {
       final wav = await MidiRenderer.renderToWavInBackground(data.bytes, sf2Path,
           onProgress: progress, cancelled: cancelled);
       rendered = (wav, null);

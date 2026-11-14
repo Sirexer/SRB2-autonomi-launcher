@@ -129,6 +129,127 @@ class NativeMusic {
     job.done((TransferableTypedData.fromList([MidiRenderer.wav(pcm, rate, 2)]), loopMs));
   }
 
+  // ---- libvorbisfile: OGG, которые не открывает stb_vorbis ----
+
+  /// libvorbisfile (идёт со сборкой лаунчера как зависимость libopenmpt; в
+  /// Linux — пакет libvorbisfile3): путь или имя; null — не нашлась.
+  static String? findVorbisFile(Iterable<String> dirs) => findLibrary(
+      Platform.isWindows
+          ? const ['libvorbisfile-3.dll', 'libvorbisfile.dll', 'vorbisfile.dll']
+          : Platform.isMacOS
+              ? const ['libvorbisfile.3.dylib', 'libvorbisfile.dylib']
+              : const ['libvorbisfile.so.3', 'libvorbisfile.so'],
+      'ov_open_callbacks',
+      dirs);
+
+  /// В отдельном изоляте: OGG Vorbis → WAV через libvorbisfile [library].
+  /// Нужно для файлов, которые встроенный декодер (stb_vorbis) не читает —
+  /// например, старые OGG с floor 0.
+  static Future<Uint8List> decodeVorbisInBackground(
+    Uint8List bytes,
+    String library, {
+    void Function(double progress)? onProgress,
+    bool Function()? cancelled,
+  }) async {
+    final result = await runKillable(
+      _vorbisJob,
+      (TransferableTypedData.fromList([bytes]), library),
+      onProgress: onProgress,
+      cancelled: cancelled,
+    );
+    return (result as TransferableTypedData).materialize().asUint8List();
+  }
+
+  // Источник для колбэков libvorbisfile (в изоляте декодера он один).
+  static Uint8List _ovData = Uint8List(0);
+  static int _ovPos = 0;
+
+  static int _ovRead(Pointer<Void> ptr, int size, int count, Pointer<Void> source) {
+    final want = size * count;
+    final n = math.min(want, _ovData.length - _ovPos);
+    if (n <= 0 || size == 0) return 0;
+    ptr.cast<Uint8>().asTypedList(n).setRange(0, n, _ovData, _ovPos);
+    _ovPos += n;
+    return n ~/ size;
+  }
+
+  static int _ovSeek(Pointer<Void> source, int offset, int whence) {
+    final to = switch (whence) {
+      0 => offset, // SEEK_SET
+      1 => _ovPos + offset, // SEEK_CUR
+      2 => _ovData.length + offset, // SEEK_END
+      _ => -1,
+    };
+    if (to < 0 || to > _ovData.length) return -1;
+    _ovPos = to;
+    return 0;
+  }
+
+  static int _ovTell(Pointer<Void> source) => _ovPos;
+
+  static void _vorbisJob(IsolateJob job) {
+    final (data, library) = job.input as (TransferableTypedData, String);
+    _ovData = data.materialize().asUint8List();
+    _ovPos = 0;
+    final lib = _open(library) ?? (throw StateError('Cannot load $library'));
+    final openCallbacks = lib.lookupFunction<
+        Int Function(Pointer<Void>, Pointer<Void>, Pointer<Utf8>, Long, _OvCallbacks),
+        int Function(Pointer<Void>, Pointer<Void>, Pointer<Utf8>, int, _OvCallbacks)>('ov_open_callbacks');
+    final info = lib.lookupFunction<Pointer<_VorbisInfo> Function(Pointer<Void>, Int),
+        Pointer<_VorbisInfo> Function(Pointer<Void>, int)>('ov_info');
+    final pcmTotal = lib.lookupFunction<Int64 Function(Pointer<Void>, Int), int Function(Pointer<Void>, int)>('ov_pcm_total');
+    final read = lib.lookupFunction<
+        Long Function(Pointer<Void>, Pointer<Uint8>, Int, Int, Int, Int, Pointer<Int>),
+        int Function(Pointer<Void>, Pointer<Uint8>, int, int, int, int, Pointer<Int>)>('ov_read');
+    final clear = lib.lookupFunction<Int Function(Pointer<Void>), int Function(Pointer<Void>)>('ov_clear');
+
+    // OggVorbis_File — около 1 КБ; с запасом.
+    final vf = calloc<Uint8>(16384).cast<Void>();
+    final callbacks = calloc<_OvCallbacks>();
+    callbacks.ref
+      ..read = Pointer.fromFunction<Size Function(Pointer<Void>, Size, Size, Pointer<Void>)>(_ovRead, 0)
+      ..seek = Pointer.fromFunction<Int Function(Pointer<Void>, Int64, Int)>(_ovSeek, -1)
+      ..close = nullptr
+      ..tell = Pointer.fromFunction<Long Function(Pointer<Void>)>(_ovTell, -1);
+    const chunk = 1 << 16;
+    final buffer = calloc<Uint8>(chunk);
+    final section = calloc<Int>();
+    var opened = false;
+    try {
+      // Источник — не NULL: с NULL libvorbisfile ничего не читает (_get_data).
+      final rc = openCallbacks(buffer.cast(), vf, nullptr, 0, callbacks.ref);
+      if (rc < 0) throw FormatException('libvorbisfile cannot open this file ($rc)');
+      opened = true;
+      final vi = info(vf, -1);
+      if (vi == nullptr) throw const FormatException('libvorbisfile: no stream info');
+      final channels = vi.ref.channels, rate = vi.ref.rate;
+      if (channels < 1 || channels > 8 || rate <= 0) throw const FormatException('libvorbisfile: bad stream info');
+      final total = pcmTotal(vf, -1);
+      final out = BytesBuilder(copy: true);
+      var frames = 0;
+      while (true) {
+        final n = read(vf, buffer, chunk, 0, 2, 1, section); // little-endian, 16 бит, со знаком
+        if (n == 0) break;
+        if (n < 0) continue; // OV_HOLE и т.п. — пропуск в потоке
+        out.add(buffer.asTypedList(n));
+        frames += n ~/ (2 * channels);
+        if (total > 0) job.progress(math.min(1, frames / total));
+        if (frames > _maxSeconds * rate) break;
+      }
+      final pcm = out.takeBytes();
+      job.done(TransferableTypedData.fromList([
+        MidiRenderer.wav(pcm.buffer.asInt16List(pcm.offsetInBytes, pcm.length ~/ 2), rate, channels),
+      ]));
+    } finally {
+      if (opened) clear(vf);
+      calloc.free(buffer);
+      calloc.free(section);
+      calloc.free(callbacks);
+      calloc.free(vf);
+      _ovData = Uint8List(0);
+    }
+  }
+
   /// Трекерный модуль через libopenmpt: один проход песни, петля — с начала.
   static (Int16List, int) _renderOpenmpt(DynamicLibrary lib, Uint8List bytes, void Function(double) progress) {
     final setRepeat =
@@ -354,3 +475,22 @@ class NativeMusic {
     }
   }
 }
+
+/// ov_callbacks (libvorbisfile): чтение, перемотка, закрытие, позиция.
+final class _OvCallbacks extends Struct {
+  external Pointer<NativeFunction<Size Function(Pointer<Void>, Size, Size, Pointer<Void>)>> read;
+  external Pointer<NativeFunction<Int Function(Pointer<Void>, Int64, Int)>> seek;
+  external Pointer<NativeFunction<Int Function(Pointer<Void>)>> close;
+  external Pointer<NativeFunction<Long Function(Pointer<Void>)>> tell;
+}
+
+/// Начало vorbis_info: version, channels, rate.
+final class _VorbisInfo extends Struct {
+  @Int()
+  external int version;
+  @Int()
+  external int channels;
+  @Long()
+  external int rate;
+}
+

@@ -84,7 +84,8 @@ void main() {
       'rings': {'total': 38860},
       'challengekeys': {'chaokeys': 280},
       'unlockables': [true, false, true],
-      'emblems': [false, true],
+      'emblems': [false, true, false, true, false],
+      'spraycans_v2': ['Black', 'Green'],
       'cups': {
         'RR_RING': {
           'name': 'RR_RING',
@@ -96,7 +97,8 @@ void main() {
       },
       'maps': {
         'RR_GREENHILLS': {
-          'visited': {'visited': true, 'beaten': true},
+          'spraycan': 1,
+          'visited': {'visited': true, 'beaten': true, 'mysticmelody': true},
           'stats': {
             'timeattack': {'besttime': 3500, 'bestlap': 1100},
             'spbattack': {'besttime': 0, 'bestlap': 0},
@@ -125,16 +127,22 @@ void main() {
     ]);
     final game = p.join(dir.path, 'scripts.pk3');
     File(game).writeAsBytesSync(buildZip([
-      ('SOC/CUPS.soc', ascii.encode('Cup RR_RING\nRealName = Ring\nIcon = CUPRING\n'
+      ('SOC/CUPS.soc', ascii.encode('Cup RR_RING\nRealName = Ring\nIcon = CUPRING\nEmeraldNum = 3\n'
           'LevelList = RR_GreenHills, RR_Other\n\nEmblem 2\nType = Time\nMapName = RR_GREENHILLS\nVar = 2*TICRATE\n\n'
+          'Emblem 4\nType = Time\nMapName = RR_GREENHILLS\nTag = AUTOMEDAL_PLATINUM\nColor = SKINCOLOR_PLATINUM\n\n'
+          'Emblem 5\nType = Time\nMapName = RR_GREENHILLS\nFlags = ME_SPBATTACK\nColor = SKINCOLOR_RED\nSprite = 2\n\n'
           'Unlockable 1\nName = Sonic\nConditionSet = 1\n\nUnlockable 3\nName = Tails\n\n'
-          'Level RR_GREENHILLS\nLevelName = Green Hills\n')),
+          'Level RR_GREENHILLS\nLevelName = Green Hills\n\n'
+          'Level RR_LOSTCOLONY\nLevelName = Lost\nZoneTitle = Colony\n\n'
+          'Level RR_SKY\nLevelName = Sky Sanctuary\nNoZone = true\nAct = 2\n\n'
+          'Emblem 6\nType = Global\nMapName = RR_GREENHILLS\nFlags = GE_NOTMEDAL\n\n'
+          'Emblem 7\nType = Map\nMapName = RR_GREENHILLS\nFlags = ME_ENCORE|ME_SPBATTACK\n')),
     ]));
 
     final r = RingProgress.loadSync(dir.path, [game], const []);
     final d = r.data;
     expect((d.playTimeTotal, d.rounds['race'], d.totalRings, d.chaoKeys), (35 * 3600, 65, 38860, 280));
-    expect((d.unlockedCount, d.emblemsCollected), (2, 1));
+    expect((d.unlockedCount, d.emblemsCollected), (2, 2));
     expect(d.cups['RR_RING'], [(placement: 1, grade: 5, emerald: true, skin: 'surge'), null]);
     expect(ringGrade(5), 'S');
     final gh = d.maps['RR_GREENHILLS']!;
@@ -148,10 +156,25 @@ void main() {
     expect((cup.id, cup.title, cup.icon), ('RR_RING', 'Ring', 'CUPRING'));
     expect(cup.levels, ['RR_GREENHILLS', 'RR_OTHER']);
     expect(RingCup('RR_SNEAKER').title, 'Sneaker');
-    final medal = r.defs.medalsOf('RR_GREENHILLS').single;
+    final medals = r.defs.medalsOf('RR_GREENHILLS');
+    expect([for (final m in medals) m.number], [2, 4, 5, 6, 7]);
+    final medal = medals.first;
     expect((medal.number, medal.type, medal.target, d.collected(medal.number - 1)), (2, 'TIME', 70, true));
+    expect((medal.colorName, medal.autoMedal, medal.spb), ('Gold', null, false)); // без Color — золото
+    expect((medals[1].autoMedal, medals[1].colorName, d.collected(3)), (3, 'SKINCOLOR_PLATINUM', true));
+    expect((medals[2].spb, medals[2].sprite, RingProgress.medalArt(medals[2])), (true, 'B', 'GOTITB:SKINCOLOR_RED'));
+    expect(cup.emeraldNum, 3);
+    expect((gh.mysticMelody, gh.sprayCan, d.sprayCans[gh.sprayCan]), (true, 1, 'Green'));
+    expect(RingProgress.emeraldArt(9, false), 'SUPER2');
+    expect(RingProgress.emeraldArt(2, false), 'EMERW');
     expect(r.defs.challenges.length, 2);
-    expect(r.defs.mapTitles['RR_GREENHILLS'], 'Green Hills');
+    expect(r.defs.mapTitles['RR_GREENHILLS'], 'Green Hills Zone'); // без ZoneTitle и NoZone — «Zone»
+    expect(r.defs.mapTitles['RR_LOSTCOLONY'], 'Lost Colony');
+    expect(r.defs.mapTitles['RR_SKY'], 'Sky Sanctuary 2');
+    final more = r.defs.medalsOf('RR_GREENHILLS');
+    final notMedal = more.firstWhere((m) => m.number == 6), beat = more.firstWhere((m) => m.number == 7);
+    expect((notMedal.kind, notMedal.notMedal, notMedal.spb), (1, true, false));
+    expect((beat.kind, beat.encore, beat.spb, beat.notMedal), (2, true, true, false));
 
     expect(() => RingData.parse(Uint8List.fromList([1, 2, 3, 4, 5, 6, 7])), throwsFormatException);
   });

@@ -32,7 +32,6 @@ class _MusicVisualizerState extends State<MusicVisualizer> with SingleTickerProv
     super.initState();
     widget.player.addListener(_update);
     AppActivity.visible.addListener(_update);
-    AppActivity.focused.addListener(_update);
     _update();
   }
 
@@ -40,16 +39,17 @@ class _MusicVisualizerState extends State<MusicVisualizer> with SingleTickerProv
   void dispose() {
     widget.player.removeListener(_update);
     AppActivity.visible.removeListener(_update);
-    AppActivity.focused.removeListener(_update);
     _ticker.dispose();
     widget.player.stopSpectrum();
     _levels.dispose();
     super.dispose();
   }
 
-  bool get _wanted => widget.player.playing && AppActivity.visible.value && AppActivity.focused.value;
+  /// Идёт, пока окно видно — и в фоне, без фокуса (на втором мониторе,
+  /// рядом с игрой); свёрнутое окно — стоит.
+  bool get _wanted => widget.player.playing && AppActivity.visible.value;
 
-  /// Играет и окно активно — тикаем; нет — ещё немного, пока полосы опускаются.
+  /// Играет и окно видно — тикаем; нет — ещё немного, пока полосы опускаются.
   void _update() {
     if (_wanted || _levels.value.any((v) => v > 0.01)) {
       if (!_ticker.isActive) {

@@ -10,7 +10,9 @@ import 'package:desktop_drop/desktop_drop.dart';
 import 'package:file_selector/file_selector.dart';
 import 'package:path/path.dart' as p;
 import 'services/app_log.dart';
+import 'services/addon_updates.dart';
 import 'services/app_paths.dart';
+import 'services/notices.dart';
 import 'services/save_guard.dart';
 import 'services/launch_state.dart';
 import 'services/game_progress.dart';
@@ -837,14 +839,17 @@ class _MainLauncherScreenState extends State<MainLauncherScreen> {
   }
 
   Future<void> _applyRepositoryUpdate(_RepoUpdate u) async {
-    // Название в новом файле могло смениться — старое убираем.
+    // Название в новом файле могло смениться — старое убираем (а что нового —
+    // сообщаем, сравнив со старым списком).
+    List<ModItem>? renamedFrom;
     if (u.title != u.name) {
-      manifestGroups.remove(u.title);
+      renamedFrom = manifestGroups.remove(u.title);
       rawManifests.remove(u.title);
       _repoPointers.remove(u.title);
       _pointerManualOnly.remove(u.title);
     }
     await _addRepository(u.name, u.text, pointer: u.pointer, quiet: true);
+    if (renamedFrom != null) _noticeRepositoryUpdate(u.name, renamedFrom, manifestGroups[u.name] ?? const []);
   }
 
   /// Репозиторий, который сейчас проверяется кнопкой у него.
@@ -1262,8 +1267,11 @@ class _MainLauncherScreenState extends State<MainLauncherScreen> {
       context,
       SettingsDialog(
         initialSection: section,
-        gameFolder: srb2FolderPath,
-        onGameFolderChanged: _setGameFolder,
+        game: _game,
+        gameFolderOf: _folderOf,
+        launchOf: _launchOf,
+        serversOf: (g) => _serversByGame.putIfAbsent(g.id, () => ServersStore(g)..load()),
+        onGameFolderChanged: _setGameFolderOf,
         hiddenTags: blacklistedTagsString,
         playerEnabled: _playerEnabled,
         onPlayerEnabledChanged: _setPlayerEnabled,
@@ -1330,10 +1338,23 @@ class _MainLauncherScreenState extends State<MainLauncherScreen> {
         onAutoHideTagsChanged: _setAutoHideTags,
         themeKey: widget.currentThemeKey,
         onThemeChanged: widget.onThemeChanged,
-        launch: _launch,
-        servers: _servers,
       ),
     );
+  }
+
+  /// Папка игры [g] из настроек: у текущей — со всем, что от неё зависит,
+  /// у другой — только запомнить. Текст ошибки или null.
+  Future<String?> _setGameFolderOf(GameDef g, String raw) async {
+    if (g == _game) return _setGameFolder(raw);
+    final folder = PlatformUtils.cleanUserPath(raw);
+    if (folder.isNotEmpty && !await Directory(folder).exists()) return tr('Folder does not exist');
+    final prefs = await SharedPreferences.getInstance();
+    if (folder.isEmpty) {
+      await prefs.remove(_folderKey(g));
+    } else {
+      await prefs.setString(_folderKey(g), folder);
+    }
+    return null;
   }
 
   /// Новая папка игры; возвращает текст ошибки или null.
@@ -1948,9 +1969,22 @@ class _MainLauncherScreenState extends State<MainLauncherScreen> {
       );
       final childEnv = _cleanChildEnvironment();
 
+      // Команда, которой нет ни в папке игры, ни в PATH, но которую знает
+      // оболочка (alias srb2legacy=... в ~/.bashrc): запуск через оболочку.
+      var exe = executable;
+      var args = finalArgs;
+      if (!Platform.isWindows && !executable.contains('/') && !PlatformUtils.onPath(executable, childEnv)) {
+        final viaShell = await PlatformUtils.shellCommand(executable, childEnv);
+        if (viaShell != null) {
+          AppLog.console('[launch] "$executable" is not on PATH; starting it through ${viaShell.$1} (alias or function)');
+          exe = viaShell.$1;
+          args = [...viaShell.$2, ...finalArgs];
+        }
+      }
+
       await Process.start(
-        executable,
-        finalArgs,
+        exe,
+        args,
         mode: ProcessStartMode.detached,
         workingDirectory: folder,
         environment: childEnv,
@@ -1964,7 +1998,10 @@ class _MainLauncherScreenState extends State<MainLauncherScreen> {
       if (!Platform.isWindows && e.errorCode == 13) {
         hint = tr('The file is not executable. Run:\nchmod +x "{path}"', {'path': executable});
       } else if (e.errorCode == 2) {
-        hint = tr('The file was not found. Check the path of the executable.');
+        hint = tr('The file was not found. Check the path of the executable.') +
+            (Platform.isWindows
+                ? ''
+                : '\n${tr('A shell alias works only if your shell ({shell}) knows it in a new terminal; otherwise give the full path.', {'shell': Platform.environment['SHELL'] ?? 'sh'})}');
       } else {
         hint = tr('Check the executable on the Launch tab.');
       }
@@ -2091,8 +2128,11 @@ class _MainLauncherScreenState extends State<MainLauncherScreen> {
     _packProgress.clear(); // строка «Прогресс» в карточках — заново
     final serverAddons = _refreshServerAddons();
     final root = srb2FolderPath;
-    final modFiles = root == null ? <String, List<String>>{} : await _downloadedModFiles(_game, root);
+    final present = <String, Set<String>>{};
+    final modFiles =
+        root == null ? <String, List<String>>{} : await _downloadedModFiles(_game, root, present: present);
     final keys = modFiles.keys.toSet();
+    unawaited(_noticeAddonUpdates(present));
     if (!mounted) return;
     setState(() => _downloadedKeys
       ..clear()
@@ -2123,7 +2163,10 @@ class _MainLauncherScreenState extends State<MainLauncherScreen> {
     }
   }
 
-  Future<Map<String, List<String>>> _downloadedModFiles(GameDef g, String root) async {
+  /// [present] — сюда же: какие файлы каждого аддона найдены ([ModFile.key]),
+  /// чтобы понять, какая версия скачана.
+  Future<Map<String, List<String>>> _downloadedModFiles(GameDef g, String root,
+      {Map<String, Set<String>>? present}) async {
     final downloads = p.joinAll([root, ...g.downloadPath]);
     final index = await LocalFileIndex.shared(root);
     final out = <String, List<String>>{};
@@ -2149,7 +2192,10 @@ class _MainLauncherScreenState extends State<MainLauncherScreen> {
               break;
             }
           }
-          if (local != null) paths.add(local);
+          if (local != null) {
+            paths.add(local);
+            present?.putIfAbsent(mod.key, () => {}).add(f.key);
+          }
         }
         if (paths.isNotEmpty) out[mod.key] = paths.toList();
       }
@@ -2578,14 +2624,14 @@ class _MainLauncherScreenState extends State<MainLauncherScreen> {
     );
   }
 
-  /// Раскрытые разделы содержимого файлов (режимы, уровни, персонажи,
-  /// цвета) — только в памяти, до выхода; сначала все свёрнуты.
-  final Set<String> _openContent = {};
+  /// Свёрнутые разделы содержимого файлов (режимы, уровни, персонажи,
+  /// цвета) — только в памяти, до выхода; сначала все раскрыты.
+  final Set<String> _closedContent = {};
 
   /// Раздел содержимого файла: заголовок со стрелкой (щелчок сворачивает и
   /// разворачивает) и, если раскрыт, [body].
   Widget _contentSection(String id, String title, List<Widget> Function() body) {
-    final open = _openContent.contains(id);
+    final open = !_closedContent.contains(id);
     return Padding(
       padding: const EdgeInsets.only(top: 12),
       child: Column(
@@ -2593,7 +2639,7 @@ class _MainLauncherScreenState extends State<MainLauncherScreen> {
         children: [
           InkWell(
             borderRadius: BorderRadius.circular(6),
-            onTap: () => setState(() => open ? _openContent.remove(id) : _openContent.add(id)),
+            onTap: () => setState(() => open ? _closedContent.add(id) : _closedContent.remove(id)),
             child: Padding(
               padding: const EdgeInsets.symmetric(vertical: 6),
               child: Row(
@@ -3271,8 +3317,67 @@ class _MainLauncherScreenState extends State<MainLauncherScreen> {
     await prefs.setString('blacklisted_tags', blacklistedTagsString);
   }
 
+  /// Уведомления «у скачанного аддона вышла новая версия» — по одному разу
+  /// на версию (что уже сообщено — в настройках). [present] — найденные файлы
+  /// аддонов текущей игры ([_downloadedModFiles]).
+  Future<void> _noticeAddonUpdates(Map<String, Set<String>> present) async {
+    if (present.isEmpty) return;
+    const key = 'addon_updates_noticed';
+    final prefs = await SharedPreferences.getInstance();
+    final seen = List.of(prefs.getStringList(key) ?? const <String>[]);
+    final known = seen.toSet();
+    final fresh = <String>[];
+    for (final group in manifestGroups.values) {
+      for (final m in group) {
+        final mod = m.forGame(_game.id);
+        final files = mod == null ? null : present[mod.key];
+        if (mod == null || files == null) continue;
+        final u = AddonUpdates.update(mod, files);
+        if (u == null) continue;
+        final id = '${mod.key}\u0000${u.$2.name}';
+        if (!known.add(id)) continue;
+        fresh.add(id);
+        Notices.instance.add(Notice(
+          NoticeKind.info,
+          tr('Addon update'),
+          tr('{addon} ({repository}): version {latest} is out, you have {installed}.', {
+            'addon': mod.name,
+            'repository': mod.repositorySource,
+            'latest': u.$2.label,
+            'installed': u.$1.label,
+          }),
+        ));
+      }
+    }
+    if (fresh.isEmpty) return;
+    seen.addAll(fresh);
+    if (seen.length > 2000) seen.removeRange(0, seen.length - 2000);
+    await prefs.setStringList(key, seen);
+  }
+
+  /// Уведомление «репозиторий обновился»: что в нём нового.
+  void _noticeRepositoryUpdate(String title, List<ModItem> before, List<ModItem> after) {
+    final d = AddonUpdates.diff(before, after);
+    String names(List<ModItem> list) =>
+        list.length <= 5 ? list.map((m) => m.name).join(', ') : '${list.take(5).map((m) => m.name).join(', ')}…';
+    final parts = [
+      if (d.added.isNotEmpty) tr('new addons ({n}): {names}', {'n': d.added.length, 'names': names(d.added)}),
+      if (d.updated.isNotEmpty) tr('new versions ({n}): {names}', {'n': d.updated.length, 'names': names(d.updated)}),
+    ];
+    Notices.instance.add(Notice(
+      NoticeKind.success,
+      tr('Repository updated'),
+      parts.isEmpty
+          ? tr('{name}: the addon list has changed.', {'name': title})
+          : '$title: ${parts.join('; ')}.',
+    ));
+  }
+
   Future<void> _addRepository(String title, String jsonContent, {String? pointer, bool quiet = false}) async {
     final parsedMods = ManifestService.parseMainIndex(jsonContent, sourceName: title);
+    // Тот же репозиторий с другим содержимым — обновление: сообщить, что нового.
+    final before = manifestGroups[title];
+    if (before != null && rawManifests[title] != jsonContent) _noticeRepositoryUpdate(title, before, parsedMods);
     setState(() {
       manifestGroups[title] = parsedMods;
       rawManifests[title] = jsonContent;

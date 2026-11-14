@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../i18n.dart';
 import '../models/game.dart';
+import '../services/app_log.dart';
 import '../services/characters.dart';
 import '../services/game_progress.dart' show formatTics;
 import '../services/launch_state.dart';
@@ -47,6 +48,9 @@ class _RingProgressTabState extends State<RingProgressTab> {
   // Между открытиями вкладки: прочитанные файлы (по времени изменения).
   static (String, DateTime?, Future<RingProgress>)? _cache;
 
+  /// Time Attack: показывать и трассы, где ещё не были.
+  static bool _unvisitedCourses = false;
+
   Future<RingProgress>? _future;
   Map<String, CharacterInfo> _chars = const {};
 
@@ -75,7 +79,15 @@ class _RingProgressTabState extends State<RingProgressTab> {
         'bios.pk3', 'data/scripts.pk3', 'data/gfx.pk3', 'data/maps.pk3', 'data/unlocks.pk3', //
       ]);
       final palettes = await widget.gameFiles(widget.game.paletteFiles);
-      return RingProgress.load(folder, files, palettes);
+      final r = await RingProgress.load(folder, files, palettes, widget.game.skinColors);
+      // Каких значков игры не нашлось — в журнал (видно, что не так с графикой).
+      if (r.artNotes.isNotEmpty) {
+        AppLog.console('[ring progress] graphics: ${r.artNotes.take(20).join('; ')}'
+            '${r.artNotes.length > 20 ? ' (+${r.artNotes.length - 20} more)' : ''}');
+      }
+      AppLog.console('[ring progress] ${r.art.length} game graphics, ${r.defs.medals.length} medals, '
+          '${r.data.emblemsCollected} collected');
+      return r;
     }();
     _cache = (folder, modified, future);
     return future;
@@ -381,7 +393,8 @@ class _RingProgressTabState extends State<RingProgressTab> {
                   ],
                 ),
                 const Divider(height: 16),
-                for (var i = 0; i < ringGpDifficulties.length; i++) _cupRow(i, records != null && i < records.length ? records[i] : null),
+                for (var i = 0; i < ringGpDifficulties.length; i++)
+                  _cupRow(r, cup, i, records != null && i < records.length ? records[i] : null),
               ],
             ),
           ),
@@ -405,7 +418,39 @@ class _RingProgressTabState extends State<RingProgressTab> {
     ]);
   }
 
-  Widget _cupRow(int difficulty, RingCupRecord? rec) {
+  /// Значок из графики игры ([RingProgress.art]) в [scale] раз крупнее.
+  Widget? _art(RingProgress r, String key, {double scale = 2, double opacity = 1}) {
+    final png = r.art[key];
+    if (png == null) return null;
+    final image = Image.memory(png, scale: 1 / scale, filterQuality: FilterQuality.none, gaplessPlayback: true);
+    return opacity < 1 ? Opacity(opacity: opacity, child: image) : image;
+  }
+
+  /// Изумруд кубка в строке сложности: Chaos (1–7) / Super (8–14) —
+  /// полученный в цвете, иначе пустой; у кубка без изумруда — «+», если
+  /// Special Stage пройден.
+  Widget _emerald(RingProgress r, RingCup cup, bool got) {
+    final n = cup.emeraldNum;
+    final Widget? icon;
+    final String tip;
+    if (n >= 1 && n <= 14) {
+      icon = _art(r, RingProgress.emeraldArt(n, got));
+      tip = n > 7
+          ? (got ? tr('Super Emerald collected') : tr('Super Emerald not collected'))
+          : (got ? tr('Chaos Emerald collected') : tr('Chaos Emerald not collected'));
+    } else {
+      icon = got ? _art(r, 'PLUS') : null;
+      tip = tr('Special Stage cleared');
+    }
+    final fallback = got ? const Icon(Icons.diamond, size: 18, color: Color(0xFF62D85A)) : null;
+    final shown = icon ?? fallback;
+    return SizedBox(
+      width: 24,
+      child: shown == null ? null : Tooltip(message: tip, child: Center(child: shown)),
+    );
+  }
+
+  Widget _cupRow(RingProgress r, RingCup cup, int difficulty, RingCupRecord? rec) {
     final label = switch (difficulty) {
       0 => tr('Relaxed'),
       1 => tr('Intense'),
@@ -423,27 +468,22 @@ class _RingProgressTabState extends State<RingProgressTab> {
             SizedBox(width: 44, child: Text(_place(rec.placement), style: const TextStyle(fontWeight: FontWeight.bold))),
             Tooltip(
               message: tr('Grade {grade}', {'grade': ringGrade(rec.grade)}),
-              child: Container(
-                width: 24,
-                alignment: Alignment.center,
-                padding: const EdgeInsets.symmetric(vertical: 1),
-                decoration: BoxDecoration(
-                  color: _gradeColor(rec.grade).withValues(alpha: 0.2),
-                  border: Border.all(color: _gradeColor(rec.grade)),
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: Text(ringGrade(rec.grade),
-                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: _gradeColor(rec.grade))),
-              ),
+              child: _art(r, RingProgress.rankArt(rec.grade)) ??
+                  Container(
+                    width: 24,
+                    alignment: Alignment.center,
+                    padding: const EdgeInsets.symmetric(vertical: 1),
+                    decoration: BoxDecoration(
+                      color: _gradeColor(rec.grade).withValues(alpha: 0.2),
+                      border: Border.all(color: _gradeColor(rec.grade)),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Text(ringGrade(rec.grade),
+                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: _gradeColor(rec.grade))),
+                  ),
             ),
             const SizedBox(width: 8),
-            if (rec.emerald)
-              Tooltip(
-                message: tr('Chaos Emerald collected'),
-                child: const Icon(Icons.diamond, size: 18, color: Color(0xFF62D85A)),
-              )
-            else
-              const SizedBox(width: 18),
+            _emerald(r, cup, rec.emerald),
             const Spacer(),
             if (rec.skin.isNotEmpty)
               Tooltip(
@@ -489,39 +529,127 @@ class _RingProgressTabState extends State<RingProgressTab> {
     ];
   }
 
-  // --- Карты ---
+  // --- Time Attack ---
 
+  /// Трассы по кубкам — в порядке игры (сначала кубки игры, по SOC); трассы
+  /// вне известных кубков (аддоны) — в конце.
   List<Widget> _maps(RingProgress r) {
     final d = r.data;
     final visited = d.maps.values.where((m) => m.visited).length;
     final beaten = d.maps.values.where((m) => m.beaten).length;
-    final withRecords = [
+    bool hasSomething(String map) {
+      final m = d.maps[map];
+      return (m != null && (m.hasRecord || m.sprayCan != RingMapRecord.noSprayCan || m.mysticMelody)) ||
+          r.defs.medalsOf(map).any((x) => d.collected(x.number - 1));
+    }
+
+    bool shown(String map) => _unvisitedCourses || (d.maps[map]?.visited ?? false) || hasSomething(map);
+
+    final groups = <(RingCup?, List<String>)>[];
+    final inCups = <String>{};
+    for (final cup in r.defs.cups) {
+      inCups.addAll(cup.levels);
+      final maps = [for (final l in cup.levels) if (shown(l)) l];
+      if (maps.isNotEmpty) groups.add((cup, maps));
+    }
+    final others = [
       for (final e in d.maps.entries)
-        if (e.value.hasRecord || r.defs.medalsOf(e.key).any((m) => d.collected(m.number - 1))) e,
-    ]..sort((a, b) => a.key.compareTo(b.key));
+        if (!inCups.contains(e.key) && hasSomething(e.key)) e.key,
+    ]..sort();
+    if (others.isNotEmpty) groups.add((null, others));
+
     return [
-      _section(tr('Courses')),
-      Text(tr('Visited: {visited} · beaten: {beaten}', {'visited': visited, 'beaten': beaten}),
-          style: const TextStyle(color: Colors.grey)),
-      if (withRecords.isEmpty)
+      _section(tr('Time Attack')),
+      Row(
+        children: [
+          Expanded(
+            child: Text(tr('Visited: {visited} · beaten: {beaten}', {'visited': visited, 'beaten': beaten}),
+                style: const TextStyle(color: Colors.grey)),
+          ),
+          FilterChip(
+            label: Text(tr('Unvisited courses')),
+            selected: _unvisitedCourses,
+            onSelected: (v) => setState(() => _unvisitedCourses = v),
+          ),
+        ],
+      ),
+      if (groups.isEmpty)
         Padding(
           padding: const EdgeInsets.only(top: 6),
           child: Text(tr('No Time Attack records yet.'), style: const TextStyle(color: Colors.grey)),
         )
-      else ...[
-        const SizedBox(height: 8),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [for (final e in withRecords) _mapCard(r, e.key, e.value)],
-        ),
-      ],
+      else
+        for (final (cup, maps) in groups) ...[
+          Padding(
+            padding: const EdgeInsets.only(top: 14, bottom: 8),
+            child: Row(
+              children: [
+                if (cup != null && r.cupIcons[cup.id] != null) ...[
+                  Image.memory(r.cupIcons[cup.id]!,
+                      width: 24, height: 24, filterQuality: FilterQuality.none, gaplessPlayback: true),
+                  const SizedBox(width: 8),
+                ],
+                Text.rich(cup == null ? TextSpan(text: tr('Other courses')) : _cupTitle(cup),
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+              ],
+            ),
+          ),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [for (final m in maps) _mapCard(r, m, d.maps[m] ?? const RingMapRecord())],
+          ),
+        ],
     ];
   }
 
+  /// Значки трассы, как в игре (Statistics): Mystic Melody, баллончик (или
+  /// бонус) и медали по номерам; платиновая не видна, пока не получена.
+  List<Widget> _mapBadges(RingProgress r, String map, RingMapRecord rec) {
+    Widget badge(String tip, Widget? icon) => icon == null
+        ? const SizedBox.shrink()
+        : Tooltip(message: tip, child: Padding(padding: const EdgeInsets.only(right: 2), child: icon));
+    final out = <Widget>[];
+    if (rec.mysticMelody) out.add(badge(tr('Mystic Melody'), _art(r, 'GOTMEL')));
+    if (rec.sprayCan == RingMapRecord.sprayBonus) {
+      out.add(badge(tr('Bonus instead of a spray can'), _art(r, 'GOTBON')));
+    } else if (rec.sprayCan < r.data.sprayCans.length) {
+      final c = r.data.sprayCans[rec.sprayCan];
+      out.add(badge(tr('Spray can: {color}', {'color': c}), _art(r, RingProgress.sprayCanArt(c))));
+    }
+    if (out.isNotEmpty) out.add(const SizedBox(width: 8));
+    int? lastKind;
+    for (final m in r.defs.medalsOf(map)) {
+      final got = r.data.collected(m.number - 1);
+      if (!got && m.autoMedal == 3) continue; // платиновая — секрет, пока не получена
+      if (m.notMedal) continue; // GE_NOTMEDAL — игра такие не показывает
+      // Между медалями разных типов — промежуток, как в игре.
+      if (lastKind != null && lastKind != m.kind) out.add(const SizedBox(width: 6));
+      lastKind = m.kind;
+      final name = m.spb
+          ? tr('SPB Attack medal')
+          : switch (m.autoMedal) {
+              0 => tr('Bronze medal'),
+              1 => tr('Silver medal'),
+              2 => tr('Gold medal'),
+              3 => tr('Platinum medal'),
+              _ => switch (m.kind) {
+                  1 => tr('Medal hidden on the course'),
+                  2 => m.encore ? tr('Medal: beat the course in Encore') : tr('Medal: beat the course'),
+                  _ => m.target > 0 ? tr('Time: beat {time}', {'time': formatTics(m.target)}) : tr('Medal'),
+                },
+            };
+      final icon = _art(r, got ? RingProgress.medalArt(m) : 'NEEDIT') ??
+          Icon(got ? Icons.military_tech : Icons.military_tech_outlined,
+              size: 16, color: got ? Colors.amber : Colors.grey);
+      out.add(badge(got ? name : tr('{medal} (not collected)', {'medal': name}), icon));
+    }
+    return out;
+  }
+
   Widget _mapCard(RingProgress r, String map, RingMapRecord rec) {
-    final medals = r.defs.medalsOf(map);
     String t(int tics) => tics > 0 ? formatTics(tics) : '—';
+    final badges = _mapBadges(r, map, rec);
     return SizedBox(
       width: 300,
       child: Card(
@@ -538,19 +666,10 @@ class _RingProgressTabState extends State<RingProgressTab> {
               if (rec.spbTime > 0)
                 Text('${tr('SPB Attack')}: ${t(rec.spbTime)} · ${tr('lap')} ${t(rec.spbLap)}',
                     style: const TextStyle(fontSize: 12)),
-              if (medals.isNotEmpty)
-                Wrap(
-                  spacing: 4,
-                  children: [
-                    for (final m in medals)
-                      Tooltip(
-                        message: m.type == 'TIME' && m.target > 0
-                            ? tr('Time: beat {time}', {'time': formatTics(m.target)})
-                            : tr('Medal'),
-                        child: Icon(r.data.collected(m.number - 1) ? Icons.military_tech : Icons.military_tech_outlined,
-                            size: 18, color: r.data.collected(m.number - 1) ? Colors.amber : Colors.grey),
-                      ),
-                  ],
+              if (badges.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: Wrap(crossAxisAlignment: WrapCrossAlignment.center, children: badges),
                 ),
             ],
           ),

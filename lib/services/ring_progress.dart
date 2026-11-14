@@ -5,6 +5,7 @@ import 'dart:typed_data';
 
 import 'package:path/path.dart' as p;
 
+import 'characters.dart';
 import 'game_progress.dart' show evalSocNumber, ProgressDefs;
 import 'map_preview.dart';
 import 'ubjson.dart';
@@ -29,19 +30,26 @@ typedef RingCupRecord = ({int placement, int grade, bool emerald, String skin});
 /// Рекорды карты: посещена / пройдена, Time Attack и SPB Attack (тики, 0 —
 /// нет), сколько на ней сыграно.
 class RingMapRecord {
-  final bool visited, beaten, encore, spbAttack;
+  final bool visited, beaten, encore, spbAttack, mysticMelody;
   final int bestTime, bestLap, spbTime, spbLap, timePlayed;
+
+  /// Баллончик с краской, собранный на карте: номер в [RingData.sprayCans];
+  /// [sprayBonus] — бонус вместо баллончика; [noSprayCan] — не собран.
+  final int sprayCan;
+  static const noSprayCan = 0xFFFF, sprayBonus = 0xFFFE; // MCAN_INVALID, MCAN_BONUS
 
   const RingMapRecord({
     this.visited = false,
     this.beaten = false,
     this.encore = false,
     this.spbAttack = false,
+    this.mysticMelody = false,
     this.bestTime = 0,
     this.bestLap = 0,
     this.spbTime = 0,
     this.spbLap = 0,
     this.timePlayed = 0,
+    this.sprayCan = noSprayCan,
   });
 
   bool get hasRecord => bestTime > 0 || spbTime > 0;
@@ -62,8 +70,11 @@ class RingData {
   final Map<String, RingMapRecord> maps;
   final Map<String, RingSkinRecord> skins;
 
+  /// Цвета баллончиков по порядку (`spraycans_v2`); у карты — номер в нём.
+  final List<String> sprayCans;
+
   RingData._(this.playTime, this.rounds, this.totalRings, this.chaoKeys, this.timesBeaten, this.unlocked,
-      this.conditionSets, this.emblems, this.cups, this.maps, this.skins);
+      this.conditionSets, this.emblems, this.cups, this.maps, this.skins, this.sprayCans);
 
   /// Файла ещё нет (игра не запускалась).
   RingData.empty()
@@ -77,7 +88,8 @@ class RingData {
         emblems = const [],
         cups = const {},
         maps = const {},
-        skins = const {};
+        skins = const {},
+        sprayCans = const [];
 
   int get playTimeTotal => playTime['total'] ?? 0;
   int get unlockedCount => unlocked.where((x) => x).length;
@@ -126,6 +138,8 @@ class RingData {
         beaten: visited['beaten'] == true,
         encore: visited['encore'] == true,
         spbAttack: visited['spbattack'] == true,
+        mysticMelody: visited['mysticmelody'] == true,
+        sprayCan: m.containsKey('spraycan') ? n(m['spraycan']) : RingMapRecord.noSprayCan,
         bestTime: n(ta['besttime']),
         bestLap: n(ta['bestlap']),
         spbTime: n(spb['besttime']),
@@ -152,6 +166,7 @@ class RingData {
       cups,
       maps,
       skins,
+      [for (final c in (j['spraycans_v2'] is List ? j['spraycans_v2'] as List : const [])) '$c'],
     );
   }
 }
@@ -197,6 +212,10 @@ class RingCup {
   final List<String> levels = [];
   String special = '';
 
+  /// Изумруд кубка (EmeraldNum): 1–7 — Chaos, 8–14 — Super, 0 — нет (в игре
+  /// вместо него «+»).
+  int emeraldNum = 0;
+
   RingCup(this.id);
 
   /// RealName, иначе имя без RR_ («RR_SNEAKER» → «Sneaker»).
@@ -214,9 +233,77 @@ class RingMedal {
   String map = '';
   String variable = '';
 
+  /// Значок `GOTIT<sprite>`, цвет (SKINCOLOR_…, без него — Gold), Tag
+  /// (AUTOMEDAL_BRONZE… — медали за время) и Flags (ME_SPBATTACK).
+  String sprite = 'A';
+  String color = '';
+  String tag = '';
+  String flags = '';
+
   RingMedal(this.number);
 
   int get target => evalSocNumber(variable);
+
+  /// Тип: 1 — Global (спрятана на трассе), 2 — Map (пройти трассу), 3 —
+  /// Time; 0 — неизвестен.
+  int get kind => switch (type) {
+        'GLOBAL' || '1' => 1,
+        'MAP' || '2' => 2,
+        'TIME' || '3' => 3,
+        _ => 0,
+      };
+
+  /// Flags числом: ME_ENCORE / GE_NOTMEDAL = 1, ME_SPBATTACK / GE_TIMED = 2,
+  /// GE_FOLLOWER = 4; можно через `|` или `+`.
+  int get flagBits {
+    var bits = 0;
+    for (final t in flags.toUpperCase().split(RegExp(r'[|+\s]+'))) {
+      bits |= switch (t) {
+        'ME_ENCORE' || 'GE_NOTMEDAL' => 1,
+        'ME_SPBATTACK' || 'GE_TIMED' => 2,
+        'GE_FOLLOWER' => 4,
+        _ => int.tryParse(t) ?? 0,
+      };
+    }
+    return bits;
+  }
+
+  /// Медаль SPB Attack (у Map и Time).
+  bool get spb => kind != 1 && flagBits & 2 != 0;
+
+  /// Пройти в Encore (у Map и Time).
+  bool get encore => kind != 1 && flagBits & 1 != 0;
+
+  /// Global без GE_NOTMEDAL: не медаль — игра её в статистике не показывает.
+  bool get notMedal => kind == 1 && flagBits & 1 != 0;
+
+  /// Медаль за время: 0 — бронза, 1 — серебро, 2 — золото, 3 — платина; null —
+  /// другая.
+  int? get autoMedal => switch (tag.toUpperCase()) {
+        'AUTOMEDAL_BRONZE' || '-4' => 0,
+        'AUTOMEDAL_SILVER' || '-3' => 1,
+        'AUTOMEDAL_GOLD' || '-2' => 2,
+        'AUTOMEDAL_PLATINUM' || '-1' => 3,
+        _ => null,
+      };
+
+  /// Цвет значка (M_GetEmblemColor: без цвета — золото).
+  String get colorName => color.isEmpty || color == '0' ? 'Gold' : color;
+}
+
+/// Название трассы, как G_BuildMapTitle: «LevelName ZoneTitle Act»; без
+/// ZoneTitle — «Zone», если нет NoZone (LF_NOZONE).
+class RingLevelTitle {
+  String name = '';
+  String zone = '';
+  int act = 0;
+  bool noZone = false;
+
+  String get title {
+    if (name.isEmpty) return '';
+    final z = zone.isNotEmpty ? ' $zone' : (noZone ? '' : ' Zone');
+    return '$name$z${act > 0 ? ' $act' : ''}';
+  }
 }
 
 /// Испытание (Unlockable N).
@@ -235,6 +322,9 @@ class RingDefs {
   final Map<int, RingMedal> medals = {};
   final Map<int, RingChallenge> challenges = {};
   final Map<String, String> mapTitles = {};
+
+  /// Заголовки уровней из SOC: название по G_BuildMapTitle.
+  final Map<String, RingLevelTitle> levels = {};
 
   void addSoc(String text) {
     Object? current;
@@ -255,6 +345,7 @@ class RingDefs {
           'CUP' when arg.isNotEmpty => _cup(arg),
           'EMBLEM' when number > 0 => medals[number] = RingMedal(number),
           'UNLOCKABLE' when number > 0 => challenges[number] = RingChallenge(number),
+          'LEVEL' when arg.isNotEmpty => levels.putIfAbsent(MapScanner.socLevelMap(arg) ?? arg, RingLevelTitle.new),
           _ => null,
         };
         continue;
@@ -274,6 +365,8 @@ class RingDefs {
                 ..addAll([for (final l in value.split(',')) if (l.trim().isNotEmpty) l.trim().toUpperCase()]);
             case 'SPECIALSTAGE':
               c.special = value.toUpperCase();
+            case 'EMERALDNUM':
+              c.emeraldNum = int.tryParse(value) ?? 0;
           }
         case RingMedal m:
           switch (key) {
@@ -283,6 +376,36 @@ class RingDefs {
               m.map = value.toUpperCase();
             case 'VAR':
               m.variable = value;
+            case 'SPRITE':
+              // Буква A–Z или номер (1 = A), как reademblemdata.
+              final v = value.toUpperCase();
+              final n = int.tryParse(v);
+              if (n != null && n >= 1 && n <= 26) {
+                m.sprite = String.fromCharCode(64 + n);
+              } else if (v.isNotEmpty && v.codeUnitAt(0) >= 65 && v.codeUnitAt(0) <= 90) {
+                m.sprite = v[0];
+              }
+            case 'COLOR':
+              m.color = value;
+            case 'TAG':
+              m.tag = value;
+            case 'FLAGS':
+              m.flags = value;
+          }
+        case RingLevelTitle l:
+          switch (key) {
+            case 'LEVELNAME':
+              l.name = value;
+            case 'ZONETITLE':
+              l.zone = value;
+            case 'ACT':
+              l.act = int.tryParse(value) ?? 0;
+            case 'NOZONE':
+              final v = value.toUpperCase();
+              l.noZone = v.startsWith('T') || v.startsWith('Y') || (int.tryParse(v) ?? 0) != 0;
+            case 'LEVELFLAGS':
+              final v = value.toUpperCase();
+              l.noZone = v.contains('LF_NOZONE') || ((int.tryParse(v) ?? 0) & 2) != 0;
           }
         case RingChallenge u:
           switch (key) {
@@ -319,18 +442,37 @@ class RingProgress {
   final List<RingProfile> profiles;
   final RingDefs defs;
   final Map<String, Uint8List> cupIcons;
+
+  /// Значки из графики игры (PNG), ключи — [medalArt], [sprayCanArt],
+  /// [emeraldArt], [rankArt] и `NEEDIT`, `GOTBON`, `GOTMEL`, `PLUS`.
+  final Map<String, Uint8List> art;
+
+  /// Каких значков не нашлось или чем их заменили (для журнала).
+  final List<String> artNotes;
   final String dataPath;
   final DateTime? modified;
 
-  RingProgress(this.data, this.profiles, this.defs, this.cupIcons, this.dataPath, this.modified);
+  RingProgress(this.data, this.profiles, this.defs, this.cupIcons, this.art, this.dataPath, this.modified,
+      [this.artNotes = const []]);
 
   static const dataFile = 'ringdata.dat';
   static const profilesFile = 'ringprofiles.prf';
 
-  static Future<RingProgress> load(String folder, List<String> gameFiles, List<String> paletteFiles) =>
-      Isolate.run(() => loadSync(folder, gameFiles, paletteFiles));
+  static String medalArt(RingMedal m) => 'GOTIT${m.sprite}:${m.colorName}';
+  static String sprayCanArt(String color) => 'GOTCAN:$color';
 
-  static RingProgress loadSync(String folder, List<String> gameFiles, List<String> paletteFiles) {
+  /// Изумруд [n] (1–14): полученный — в цвете Chaos Emerald, иначе пустой.
+  static String emeraldArt(int n, bool got) => got ? 'EMER:$n' : (n > 7 ? 'SUPER2' : 'EMERW');
+  static String rankArt(int grade) => 'RANK$grade';
+
+  /// [colors] — встроенные цвета игры (для перекраски медалей, баллончиков,
+  /// изумрудов — как R_GetTranslationColormap: индексы 96–111).
+  static Future<RingProgress> load(String folder, List<String> gameFiles, List<String> paletteFiles,
+          List<SkinColor> colors) =>
+      Isolate.run(() => loadSync(folder, gameFiles, paletteFiles, colors));
+
+  static RingProgress loadSync(String folder, List<String> gameFiles, List<String> paletteFiles,
+      [List<SkinColor> colors = const []]) {
     final dataFile = File(p.join(folder, RingProgress.dataFile));
     final exists = dataFile.existsSync();
     final data = exists ? RingData.parse(dataFile.readAsBytesSync()) : RingData.empty();
@@ -343,6 +485,8 @@ class RingProgress {
     final defs = RingDefs();
     final archives = [for (final f in gameFiles) if (AddonArchive.open(f) case final a?) a];
     final icons = <String, Uint8List>{};
+    final art = <String, Uint8List>{};
+    final notes = <String>[];
     try {
       for (final a in archives) {
         for (final e in a.entries) {
@@ -354,6 +498,10 @@ class RingProgress {
         try {
           defs.mapTitles.addAll(MapScanner.levelTitles(a));
         } catch (_) {}
+      }
+      // Полные названия, как в игре: с ZoneTitle / «Zone».
+      for (final e in defs.levels.entries) {
+        if (e.value.title.isNotEmpty) defs.mapTitles[e.key] = e.value.title;
       }
       Uint8List? palette;
       var paletteRead = false;
@@ -377,12 +525,84 @@ class RingProgress {
           break;
         }
       }
+      _art(art, notes, archives, pal, colors, data, defs);
     } finally {
       for (final a in archives) {
         a.close();
       }
     }
-    return RingProgress(data, profiles, defs, icons, dataFile.path, exists ? dataFile.lastModifiedSync() : null);
+    return RingProgress(
+        data, profiles, defs, icons, art, dataFile.path, exists ? dataFile.lastModifiedSync() : null, notes);
+  }
+
+  /// Значки статистики и Гран-при (graphics/Menus/Statistics, Emerald HUD,
+  /// Rank/Cup Select, консольный шрифт): перекрашенные — только нужные.
+  static void _art(Map<String, Uint8List> out, List<String> notes, List<AddonArchive> archives,
+      Uint8List? Function() palette, List<SkinColor> colors, RingData data, RingDefs defs) {
+    final patches = <String, (int, int, Uint8List, Uint8List)?>{};
+    (int, int, Uint8List, Uint8List)? patch(String lump) => patches.putIfAbsent(lump, () {
+          for (final a in archives.reversed) {
+            final e = a.find(lump);
+            if (e == null) continue;
+            try {
+              return MapScanner.decodePatchIndexed(a.read(e));
+            } catch (_) {
+              return null;
+            }
+          }
+          return null;
+        });
+    void put(String key, String lump, [String? color, String fallbackColor = '']) {
+      if (out.containsKey(key)) return;
+      final pt = patch(lump);
+      final pal = palette();
+      if (pal == null) {
+        if (notes.isEmpty) notes.add('no PLAYPAL in the game files');
+        return;
+      }
+      if (pt == null) {
+        notes.add('no graphic $lump');
+        return;
+      }
+      var ramp = color == null ? null : CharacterScanner.findColor(colors, color);
+      if (color != null && ramp == null && fallbackColor.isNotEmpty) {
+        notes.add('$key: color "$color" unknown, $fallbackColor instead');
+        ramp = CharacterScanner.findColor(colors, fallbackColor);
+      }
+      if (color != null && ramp == null) {
+        notes.add('$key: color "$color" unknown');
+        return;
+      }
+      out[key] = CharacterScanner.render(pt.$1, pt.$2, pt.$3, pt.$4, pal, 96, ramp);
+    }
+
+    put('NEEDIT', 'NEEDIT');
+    put('GOTBON', 'GOTBON');
+    put('GOTMEL', 'GOTMEL');
+    put('PLUS', 'STCFN043');
+    put('EMERW', 'K_EMERW');
+    put('SUPER2', 'K_SUPER2');
+    for (var n = 1; n <= 14; n++) {
+      put(emeraldArt(n, true), n > 7 ? 'K_SUPER1' : 'K_EMERC', 'Chaos Emerald ${(n - 1) % 7 + 1}');
+    }
+    // Оценка — в своём цвете (K_GetGradeColor).
+    const gradeColors = ['Blue', 'Turtle', 'Orange', 'Red', 'Magenta', 'Pigeon'];
+    for (var g = 0; g <= 5; g++) {
+      put(rankArt(g), 'R_CUPRN${'EDCBAS'[g]}', gradeColors[g]);
+    }
+    // Медаль: GOTIT<буква> (нет такой — GOTITA) в её цвете; неизвестный цвет
+    // — золото, как M_GetEmblemColor.
+    for (final m in defs.medals.values) {
+      if (!data.collected(m.number - 1)) continue;
+      final lump = patch('GOTIT${m.sprite}') != null ? 'GOTIT${m.sprite}' : 'GOTITA';
+      put(medalArt(m), lump, m.colorName, 'Gold');
+    }
+    for (final rec in data.maps.values) {
+      if (rec.sprayCan < data.sprayCans.length) {
+        final c = data.sprayCans[rec.sprayCan];
+        put(sprayCanArt(c), 'GOTCAN', c);
+      }
+    }
   }
 
   /// Значок кубка: PNG как есть, Doom-патч — с прозрачностью.

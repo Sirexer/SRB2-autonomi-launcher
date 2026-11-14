@@ -37,10 +37,18 @@ enum SettingsSection { general, game, addons, launch, servers, experimental }
 /// Окно настроек: разделы слева, содержимое справа. Изменения применяются сразу.
 class SettingsDialog extends StatefulWidget {
   final SettingsSection initialSection;
-  final String? gameFolder;
+
+  /// Текущая игра лаунчера: её папку, сборки и серверы окно показывает
+  /// сначала; другую игру можно выбрать в самом окне.
+  final GameDef game;
+
+  /// Папка, сборки и серверы игры.
+  final Future<String?> Function(GameDef game) gameFolderOf;
+  final Future<LaunchSettings> Function(GameDef game) launchOf;
+  final ServersStore Function(GameDef game) serversOf;
 
   /// Меняет папку игры; возвращает текст ошибки или null.
-  final Future<String?> Function(String folder) onGameFolderChanged;
+  final Future<String?> Function(GameDef game, String folder) onGameFolderChanged;
   final String hiddenTags;
   final ValueChanged<String> onHiddenTagsChanged;
   final bool autoHideTags;
@@ -85,13 +93,14 @@ class SettingsDialog extends StatefulWidget {
   final ValueChanged<TagDisplay> onTagDisplayChanged;
   final String themeKey;
   final ValueChanged<String> onThemeChanged;
-  final LaunchSettings launch;
-  final ServersStore servers;
 
   const SettingsDialog({
     super.key,
     this.initialSection = SettingsSection.general,
-    required this.gameFolder,
+    required this.game,
+    required this.gameFolderOf,
+    required this.launchOf,
+    required this.serversOf,
     required this.onGameFolderChanged,
     required this.hiddenTags,
     required this.onHiddenTagsChanged,
@@ -121,8 +130,6 @@ class SettingsDialog extends StatefulWidget {
     required this.onTagDisplayChanged,
     required this.themeKey,
     required this.onThemeChanged,
-    required this.launch,
-    required this.servers,
   });
 
   /// Открывает настройки на нужном разделе.
@@ -136,11 +143,17 @@ class SettingsDialog extends StatefulWidget {
 }
 
 class _SettingsDialogState extends State<SettingsDialog> {
-  /// Игра, чьи папка, сборки и серверы настраиваются.
-  GameDef get _g => widget.launch.game;
+  /// Игра, чьи папка, сборки и серверы настраиваются (выбирается в окне;
+  /// игру лаунчера это не меняет).
+  late GameDef _g = widget.game;
+
+  /// Её сборки (null — ещё загружаются), серверы и папка.
+  LaunchSettings? _launchSettings;
+  late ServersStore _serversStore = widget.serversOf(_g);
+  String? _gameFolder;
   late SettingsSection _section = widget.initialSection;
   late String _themeKey = widget.themeKey;
-  late final _folder = TextEditingController(text: widget.gameFolder ?? '');
+  final _folder = TextEditingController();
   late final _tags = TextEditingController(text: widget.hiddenTags);
   late bool _versionFolders = widget.versionFolders;
   late bool _playerEnabled = widget.playerEnabled;
@@ -164,25 +177,95 @@ class _SettingsDialogState extends State<SettingsDialog> {
   String? _folderError;
   bool _folderSaved = false;
 
-  static const _sections = [
+  /// Общие разделы и разделы игры (под выбором игры).
+  static const _common = [
     (SettingsSection.general, Icons.tune, 'General'),
-    (SettingsSection.game, Icons.folder_outlined, 'Game folder'),
     (SettingsSection.addons, Icons.extension_outlined, 'Addons'),
-    (SettingsSection.launch, Icons.play_circle_outline, 'Launch'),
-    (SettingsSection.servers, Icons.dns_outlined, 'Servers'),
     (SettingsSection.experimental, Icons.science_outlined, 'Experimental'),
   ];
+  static const _perGame = [
+    (SettingsSection.game, Icons.folder_outlined, 'Game folder'),
+    (SettingsSection.launch, Icons.play_circle_outline, 'Launch'),
+    (SettingsSection.servers, Icons.dns_outlined, 'Servers'),
+  ];
+  static const _sections = [..._common, ..._perGame];
 
   @override
   void initState() {
     super.initState();
-    if (widget.gameFolder == null) {
+    _loadGame(_g);
+  }
+
+  /// Папка и сборки игры [g] — в разделы игры.
+  Future<void> _loadGame(GameDef g) async {
+    setState(() {
+      _g = g;
+      _launchSettings = null;
+      _serversStore = widget.serversOf(g);
+      _gameFolder = null;
+      _folder.text = '';
+      _folderError = null;
+      _folderSaved = false;
+    });
+    final folder = await widget.gameFolderOf(g);
+    final launch = await widget.launchOf(g);
+    if (!mounted || _g != g) return;
+    setState(() {
+      _gameFolder = folder;
+      _folder.text = folder ?? '';
+      _launchSettings = launch;
+    });
+    if (folder == null) {
       // Подсказка для Linux: ~/.srb2, ~/.ringracers (или папка Flatpak), если она существует.
-      PlatformUtils.detectGameFolder(_g).then((dir) {
-        if (dir != null && mounted && _folder.text.isEmpty) setState(() => _folder.text = dir);
-      });
+      final dir = await PlatformUtils.detectGameFolder(g);
+      if (dir != null && mounted && _g == g && _folder.text.isEmpty) setState(() => _folder.text = dir);
     }
   }
+
+  /// Выбор игры над её разделами.
+  Widget _gamePicker() => Padding(
+        padding: const EdgeInsets.fromLTRB(8, 4, 4, 6),
+        child: DropdownButtonHideUnderline(
+          child: DropdownButton<GameDef>(
+            value: _g,
+            isExpanded: true,
+            borderRadius: BorderRadius.circular(8),
+            items: [
+              for (final g in Games.all)
+                DropdownMenuItem(
+                  value: g,
+                  child: Row(
+                    children: [
+                      Image.asset(g.iconAsset, width: 20, height: 20, errorBuilder: (_, _, _) => const SizedBox(width: 20)),
+                      const SizedBox(width: 8),
+                      Flexible(
+                        child: Text(g.fullName,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(fontWeight: g == widget.game ? FontWeight.bold : FontWeight.normal)),
+                      ),
+                    ],
+                  ),
+                ),
+            ],
+            onChanged: (g) {
+              if (g != null && g != _g) _loadGame(g);
+            },
+          ),
+        ),
+      );
+
+  Widget _sectionTile(SettingsSection section, IconData icon, String label, Color accent) => Padding(
+        padding: const EdgeInsets.only(bottom: 2),
+        child: ListTile(
+          dense: true,
+          selected: _section == section,
+          selectedTileColor: accent.withValues(alpha: 0.18),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+          leading: Icon(icon, size: 20),
+          title: Text(tr(label), style: const TextStyle(fontSize: 14)),
+          onTap: () => setState(() => _section = section),
+        ),
+      );
 
   @override
   void dispose() {
@@ -208,35 +291,27 @@ class _SettingsDialogState extends State<SettingsDialog> {
               width: 240,
               color: Colors.black.withValues(alpha: 0.25),
               padding: const EdgeInsets.fromLTRB(12, 20, 12, 12),
-              child: Column(
+              // Свой Material: подсветка пунктов рисуется поверх подложки.
+              child: Material(
+                type: MaterialType.transparency,
+                child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Padding(
                     padding: const EdgeInsets.fromLTRB(8, 0, 8, 16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(tr('Settings'), style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-                        const SizedBox(height: 2),
-                        // Папка, сборки и серверы — у каждой игры свои.
-                        Text(_g.fullName, style: const TextStyle(fontSize: 12, color: Colors.grey)),
-                      ],
-                    ),
+                    child: Text(tr('Settings'), style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
                   ),
-                  for (final (section, icon, label) in _sections)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 2),
-                      child: ListTile(
-                        dense: true,
-                        selected: _section == section,
-                        selectedTileColor: accent.withValues(alpha: 0.18),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-                        leading: Icon(icon, size: 20),
-                        title: Text(tr(label), style: const TextStyle(fontSize: 14)),
-                        onTap: () => setState(() => _section = section),
-                      ),
-                    ),
+                  for (final (section, icon, label) in _common) _sectionTile(section, icon, label, accent),
+                  const Divider(height: 20),
+                  // Папка, сборки и серверы — у каждой игры свои: какой — выбирается здесь.
+                  Padding(
+                    padding: const EdgeInsets.only(left: 8),
+                    child: Text(tr('Game'), style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                  ),
+                  _gamePicker(),
+                  for (final (section, icon, label) in _perGame) _sectionTile(section, icon, label, accent),
                 ],
+              ),
               ),
             ),
             // Содержимое раздела.
@@ -499,12 +574,16 @@ class _SettingsDialogState extends State<SettingsDialog> {
   // --- Game folder ---
 
   Future<void> _saveFolder(String value) async {
-    final error = await widget.onGameFolderChanged(value);
-    if (!mounted) return;
+    final g = _g;
+    final error = await widget.onGameFolderChanged(g, value);
+    if (!mounted || _g != g) return;
     setState(() {
       _folderError = error;
       _folderSaved = error == null;
-      if (error == null) _folder.text = PlatformUtils.cleanUserPath(value);
+      if (error == null) {
+        _folder.text = PlatformUtils.cleanUserPath(value);
+        _gameFolder = _folder.text.isEmpty ? null : _folder.text;
+      }
     });
   }
 
@@ -724,7 +803,8 @@ class _SettingsDialogState extends State<SettingsDialog> {
   // --- Launch ---
 
   Widget _launch() {
-    final s = widget.launch;
+    final s = _launchSettings;
+    if (s == null) return const Center(child: CircularProgressIndicator());
     return ListenableBuilder(
       listenable: s,
       builder: (context, _) => Row(
@@ -756,7 +836,7 @@ class _SettingsDialogState extends State<SettingsDialog> {
                             tooltip: tr('Edit'),
                             onPressed: () async {
                               final edited = await showExecutableDialog(context,
-                                  initial: e, initialDirectory: widget.gameFolder);
+                                  initial: e, initialDirectory: _gameFolder);
                               if (edited != null) s.updateExecutable(edited);
                             },
                           ),
@@ -782,7 +862,7 @@ class _SettingsDialogState extends State<SettingsDialog> {
                       onPressed: () async {
                         final added = await showExecutableDialog(
                           context,
-                          initialDirectory: widget.gameFolder,
+                          initialDirectory: _gameFolder,
                           suggestName: s.uniqueName,
                         );
                         if (added != null) s.addExecutable(added, select: false);
@@ -791,7 +871,7 @@ class _SettingsDialogState extends State<SettingsDialog> {
                     OutlinedButton.icon(
                       icon: const Icon(Icons.manage_search),
                       label: Text(tr('Find builds in folder...')),
-                      onPressed: () => ExecutableSelector(settings: s, initialDirectory: widget.gameFolder)
+                      onPressed: () => ExecutableSelector(settings: s, initialDirectory: _gameFolder)
                           .scanFolder(context),
                     ),
                   ],
@@ -919,7 +999,7 @@ class _SettingsDialogState extends State<SettingsDialog> {
   }
 
   Widget _servers() {
-    final store = widget.servers;
+    final store = _serversStore;
     return ListenableBuilder(
       listenable: store,
       builder: (context, _) => Column(
