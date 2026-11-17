@@ -105,26 +105,121 @@ class LauncherUpdate {
   /// Файлы, которые пользователь мог поменять: остаются как есть.
   static const _keepIfPresent = {'pointer.txt'};
 
-  /// Релизы, новые сверху (без черновиков).
+  /// Лента релизов: запасной путь, когда API не отвечает. У API без входа
+  /// лимит 60 запросов в час на адрес — через VPN или общий адрес у
+  /// провайдера он кончается быстро (ответ 403).
+  static const _feed = 'https://github.com/$repository/releases.atom';
+
+  /// Имена файлов релиза, как их называет CI (для ленты: в ней файлов нет).
+  static const _assetNames = ['SRB2-Autonomi-Launcher-windows-x64.zip', 'SRB2-Autonomi-Launcher-x86_64.AppImage'];
+
+  /// Релизы, новые сверху (без черновиков): из API GitHub, иначе из ленты.
   static Future<List<LauncherRelease>> releases() async {
-    final client = HttpClient()
-      ..connectionTimeout = const Duration(seconds: 10)
-      ..userAgent = 'SRB2-Autonomi-Launcher';
+    Object apiError;
     try {
-      final req = await client.getUrl(Uri.parse(_api)).timeout(const Duration(seconds: 15));
-      req.headers.set(HttpHeaders.acceptHeader, 'application/vnd.github+json');
-      final resp = await req.close().timeout(const Duration(seconds: 20));
-      if (resp.statusCode != 200) throw HttpException('HTTP ${resp.statusCode}');
-      final text = await resp.transform(utf8.decoder).join().timeout(const Duration(seconds: 20));
+      final text = await _get(_api, accept: 'application/vnd.github+json');
       final list = [
         for (final j in jsonDecode(text) as List)
           ?LauncherRelease.fromJson(j),
       ];
       list.sort((a, b) => (b.published ?? DateTime(0)).compareTo(a.published ?? DateTime(0)));
       return list;
+    } catch (e) {
+      apiError = e;
+      AppLog.console('[update] GitHub API: $e; trying the releases feed');
+    }
+    try {
+      return parseFeed(await _get(_feed, accept: 'application/atom+xml'));
+    } catch (e) {
+      AppLog.console('[update] releases feed: $e');
+      throw HttpException('$apiError; $e');
+    }
+  }
+
+  /// GET [url] текстом; не 200 — ошибка с адресом и сообщением сервера.
+  static Future<String> _get(String url, {required String accept}) async {
+    final client = HttpClient()
+      ..connectionTimeout = const Duration(seconds: 10)
+      ..userAgent = 'SRB2-Autonomi-Launcher';
+    try {
+      final req = await client.getUrl(Uri.parse(url)).timeout(const Duration(seconds: 15));
+      req.headers.set(HttpHeaders.acceptHeader, accept);
+      final resp = await req.close().timeout(const Duration(seconds: 20));
+      final text = await resp.transform(utf8.decoder).join().timeout(const Duration(seconds: 20));
+      if (resp.statusCode != 200) throw HttpException(_httpError(resp, Uri.parse(url), text));
+      return text;
     } finally {
       client.close(force: true);
     }
+  }
+
+  /// «HTTP 403 (api.github.com): API rate limit exceeded...» — с кем и что не так.
+  static String _httpError(HttpClientResponse resp, Uri url, [String body = '']) {
+    final host = resp.redirects.isNotEmpty ? resp.redirects.last.location.host : url.host;
+    var message = '';
+    try {
+      final j = jsonDecode(body);
+      if (j is Map && j['message'] is String) message = j['message'] as String;
+    } catch (_) {}
+    final short = message.length > 120 ? '${message.substring(0, 120)}…' : message;
+    return 'HTTP ${resp.statusCode} ($host)${short.isEmpty ? '' : ': $short'}';
+  }
+
+  /// Релизы из ленты `releases.atom`: тег, дата, описание (HTML → текст);
+  /// файлы — по именам из CI, без размера и SHA-256.
+  static List<LauncherRelease> parseFeed(String xml) {
+    String? tag(String entry, String name) =>
+        RegExp('<$name(?:\\s[^>]*)?>([\\s\\S]*?)</$name>').firstMatch(entry)?.group(1);
+    final out = <LauncherRelease>[];
+    for (final m in RegExp(r'<entry>([\s\S]*?)</entry>').allMatches(xml)) {
+      final e = m.group(1)!;
+      final link = RegExp(r'<link[^>]*href="([^"]+)"').firstMatch(e)?.group(1) ?? '';
+      final i = link.indexOf('/releases/tag/');
+      if (i < 0) continue;
+      final releaseTag = Uri.decodeComponent(link.substring(i + '/releases/tag/'.length));
+      final title = _unescape(tag(e, 'title') ?? '').trim();
+      out.add(LauncherRelease(
+        tag: releaseTag,
+        name: title.isEmpty ? releaseTag : title,
+        changelog: htmlToText(_unescape(tag(e, 'content') ?? '')),
+        published: DateTime.tryParse(tag(e, 'updated') ?? ''),
+        pageUrl: link,
+        assets: [
+          for (final name in _assetNames)
+            ReleaseAsset(name, 'https://github.com/$repository/releases/download/${Uri.encodeComponent(releaseTag)}/$name', 0, null),
+        ],
+      ));
+    }
+    out.sort((a, b) => (b.published ?? DateTime(0)).compareTo(a.published ?? DateTime(0)));
+    return out;
+  }
+
+  static String _unescape(String s) => s
+      .replaceAll('&lt;', '<')
+      .replaceAll('&gt;', '>')
+      .replaceAll('&quot;', '"')
+      .replaceAll('&#39;', "'")
+      .replaceAllMapped(RegExp(r'&#(\d+);'), (m) => String.fromCharCode(int.parse(m[1]!)))
+      .replaceAllMapped(RegExp(r'&#x([0-9a-fA-F]+);'), (m) => String.fromCharCode(int.parse(m[1]!, radix: 16)))
+      .replaceAll('&amp;', '&');
+
+  /// Описание релиза из HTML ленты — в Markdown, как в API: заголовки `##`,
+  /// пункты `-`, абзацы.
+  static String htmlToText(String html) {
+    var s = html.replaceAll(RegExp(r'\s*\n\s*'), ' ');
+    s = s.replaceAllMapped(RegExp(r'<h([1-6])[^>]*>', caseSensitive: false), (m) => '\n${'#' * int.parse(m[1]!)} ');
+    s = s.replaceAll(RegExp(r'</h[1-6]>', caseSensitive: false), '\n');
+    s = s.replaceAll(RegExp(r'<li[^>]*>', caseSensitive: false), '\n- ');
+    s = s.replaceAll(RegExp(r'<br\s*/?>|</p>|</ul>|</ol>|<p[^>]*>', caseSensitive: false), '\n');
+    s = s.replaceAllMapped(RegExp(r'<(strong|b)>(.*?)</\1>', caseSensitive: false), (m) => '**${m[2]}**');
+    s = s.replaceAll(RegExp(r'<[^>]+>'), '');
+    s = _unescape(s);
+    return s
+        .split('\n')
+        .map((l) => l.trimRight().replaceAll(RegExp(r'^ +'), ''))
+        .join('\n')
+        .replaceAll(RegExp(r'\n{3,}'), '\n\n')
+        .trim();
   }
 
   /// Время сборки из [BuildInfo.date] («2026-11-12 05:55 UTC»).
@@ -202,7 +297,7 @@ class LauncherUpdate {
     try {
       final req = await client.getUrl(Uri.parse(asset.url));
       final resp = await req.close();
-      if (resp.statusCode != 200) throw HttpException('HTTP ${resp.statusCode}');
+      if (resp.statusCode != 200) throw HttpException(_httpError(resp, Uri.parse(asset.url)));
       final total = resp.contentLength > 0 ? resp.contentLength : asset.size;
       final sink = part.openWrite();
       var got = 0;

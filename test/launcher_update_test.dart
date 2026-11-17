@@ -110,4 +110,44 @@ void main() {
       tmp.deleteSync(recursive: true);
     }
   });
+
+  test('releases from the atom feed (when the API answers 403)', () {
+    const feed = """<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom" xmlns:media="http://search.yahoo.com/mrss/" xml:lang="en-US">
+  <id>tag:github.com,2008:https://github.com/Sirexer/SRB2-autonomi-launcher/releases</id>
+  <title>Release notes from SRB2-autonomi-launcher</title>
+  <updated>2026-11-20T12:00:00Z</updated>
+  <entry>
+    <id>tag:github.com,2008:Repository/1/beta-release2</id>
+    <updated>2026-11-10T12:00:00Z</updated>
+    <link rel="alternate" type="text/html" href="https://github.com/Sirexer/SRB2-autonomi-launcher/releases/tag/beta-release2"/>
+    <title>beta-release2</title>
+    <content type="html">&lt;p&gt;Old&lt;/p&gt;</content>
+    <author><name>Sirexer</name></author>
+  </entry>
+  <entry>
+    <id>tag:github.com,2008:Repository/1/beta-release3</id>
+    <updated>2026-11-20T12:00:00Z</updated>
+    <link rel="alternate" type="text/html" href="https://github.com/Sirexer/SRB2-autonomi-launcher/releases/tag/beta-release3"/>
+    <title>Beta release 3</title>
+    <content type="html">&lt;h2&gt;What&amp;#39;s new&lt;/h2&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;Updates&lt;/strong&gt; &amp;amp; fixes&lt;/li&gt;
+&lt;li&gt;IPv6 &amp;lt;hidden&amp;gt;&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;Thanks!&lt;/p&gt;</content>
+  </entry>
+</feed>""";
+    final list = LauncherUpdate.parseFeed(feed);
+    expect([for (final r in list) r.tag], ['beta-release3', 'beta-release2']);
+    final r = list.first;
+    expect((r.name, r.published, r.pageUrl), (
+      'Beta release 3',
+      DateTime.utc(2026, 11, 20, 12),
+      'https://github.com/Sirexer/SRB2-autonomi-launcher/releases/tag/beta-release3',
+    ));
+    expect(r.changelog, "## What's new\n\n- **Updates** & fixes\n- IPv6 <hidden>\n\nThanks!");
+    expect(r.assetForThisSystem!.url, startsWith('https://github.com/Sirexer/SRB2-autonomi-launcher/releases/download/beta-release3/'));
+    expect(r.assetForThisSystem!.sha256, isNull);
+  });
 }
