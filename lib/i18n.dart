@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:ui' show PlatformDispatcher;
 
 import 'package:flutter/widgets.dart';
 import 'package:path/path.dart' as p;
@@ -73,6 +74,17 @@ class I18n extends ChangeNotifier {
     } catch (_) {}
     found.sort((a, b) => a.code == 'en' ? -1 : (b.code == 'en' ? 1 : a.name.compareTo(b.name)));
     available = found;
+  }
+
+  /// Язык системы, если для него есть перевод (иначе английский). Файл
+  /// украинского — `ua.json`, а код языка в системе — `uk`.
+  String systemLanguage() {
+    for (final locale in PlatformDispatcher.instance.locales) {
+      var c = locale.languageCode.toLowerCase();
+      if (c == 'uk') c = 'ua';
+      if (available.any((l) => l.code == c)) return c;
+    }
+    return 'en';
   }
 
   /// Загружает язык; при ошибке остаётся английский.

@@ -47,7 +47,17 @@ if ($stale) {
   Remove-Item -Recurse -Force build\windows
 }
 
-flutter build windows --release "--dart-define=BUILD_DATE=$date" "--dart-define=BUILD_COMMIT=$commit" "--dart-define=BUILD_FLUTTER=$have"
+# Launcher version: $env:BUILD_VERSION, or the release tag on this commit
+# (beta-release3); the launcher compares it with the latest release.
+$version = $env:BUILD_VERSION
+if (-not $version) {
+  # No tag on this commit: git writes to stderr, which 'Stop' would turn into an error.
+  $ErrorActionPreference = 'Continue'
+  $version = git describe --tags --exact-match 2>$null
+  $ErrorActionPreference = 'Stop'
+}
+if (-not $version) { $version = '' }
+flutter build windows --release "--dart-define=BUILD_DATE=$date" "--dart-define=BUILD_COMMIT=$commit" "--dart-define=BUILD_FLUTTER=$have" "--dart-define=BUILD_VERSION=$version"
 Check 'flutter build windows'
 
 $release = 'build\windows\x64\runner\Release'
@@ -129,6 +139,8 @@ if ($bundled) {
 Copy-Item packaging\pointer.txt "$release\pointer.txt"
 # Attribution of the data in the launcher (DB-IP, flags).
 Copy-Item packaging\NOTICE.txt "$release\NOTICE.txt"
+# Custom games (BlanKart) offered on the first start.
+Copy-Item packaging\another_games.json "$release\another_games.json"
 
 $zip = 'SRB2-Autonomi-Launcher-windows-x64.zip'
 if (Test-Path $zip) { Remove-Item $zip }

@@ -185,9 +185,11 @@ class ModItem {
   Set<String> get games => {for (final f in files) ...f.games};
 
   /// Аддон только с файлами для игры [gameId]; null — для неё файлов нет.
-  ModItem? forGame(String gameId) {
-    if (files.every((f) => f.supports(gameId))) return this;
-    final own = [for (final f in files) if (f.supports(gameId)) f];
+  /// [orBase] — и файлы основы (своя игра с `base_addons`).
+  ModItem? forGame(String gameId, {String? orBase}) {
+    bool fits(ModFile f) => f.supports(gameId) || (orBase != null && f.supports(orBase));
+    if (files.every(fits)) return this;
+    final own = [for (final f in files) if (fits(f)) f];
     if (own.isEmpty) return null;
     return ModItem(
       id: id,

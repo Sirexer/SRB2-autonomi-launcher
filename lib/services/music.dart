@@ -4,6 +4,7 @@ import 'dart:isolate';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
+import '../models/game.dart';
 import 'app_log.dart';
 import 'map_preview.dart';
 
@@ -327,7 +328,8 @@ class MusicLibrary {
     final own = t.category == MusicCategory.game ? null : infos[t.file];
     if (own != null) add(own);
 
-    final ringRacers = t.game == 'drrr';
+    final engine = Games.find(t.game)?.engine ?? t.game;
+    final ringRacers = engine == 'drrr';
     final lump = t.lump.toUpperCase();
     final maps = known.toList()..sort((a, b) => MapScanner.mapOrder(a).compareTo(MapScanner.mapOrder(b)));
     final result = <LevelRef>[];
@@ -343,7 +345,7 @@ class MusicLibrary {
         result.add(LevelRef(m, titles[m] ?? '', fromTrackFile: fromFile));
       } else if (encore[m]?.contains(lump) ?? false) {
         result.add(LevelRef(m, titles[m] ?? '', fromTrackFile: fromFile, encore: true));
-      } else if (t.game == 'srb2kart' && numbered && lump == '${m}E') {
+      } else if (engine == 'srb2kart' && numbered && lump == '${m}E') {
         result.add(LevelRef(m, titles[m] ?? '', fromTrackFile: fromFile, encore: true, byName: true));
       }
     }

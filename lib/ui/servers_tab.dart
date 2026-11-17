@@ -17,6 +17,7 @@ import '../services/geoip.dart';
 import '../services/map_preview.dart';
 import 'character_picker.dart';
 import 'file_actions.dart';
+import '../services/file_hash.dart';
 import '../services/server_downloads.dart';
 export '../services/server_downloads.dart' show RepoFileRef;
 import '../services/server_files.dart';
@@ -278,6 +279,7 @@ class _ServersTabState extends State<ServersTab> {
       if (store.hideOffline && offline && r.favorite == null) return false;
       if (store.hideLocal && r.fromLocal && r.favorite == null) return false;
       if (store.hideUnsupported && (r.result?.isUnsupported ?? false) && r.favorite == null) return false;
+      if (store.hideIPv6 && r.isIPv6 && r.favorite == null) return false;
       if (store.modifiedOnly && !(info?.modified ?? false)) return false;
       if (store.hideModified && (info?.modified ?? false)) return false;
       if (store.shownGametypes.isNotEmpty &&
@@ -560,7 +562,7 @@ class _ServersTabState extends State<ServersTab> {
           paths.every((x) => x != null && x.isNotEmpty);
       widget.onJoin(
         row.address,
-        canPreload && store.preloadAddons ? [for (final x in paths) x!] : null,
+        canPreload && store.preloadAddons && store.game.protocol.preloadFiles ? [for (final x in paths) x!] : null,
         executableId,
       );
     } finally {
@@ -1107,6 +1109,8 @@ class _ServersTabState extends State<ServersTab> {
             ],
           ),
           const SizedBox(height: 4),
+          // BlanKart грузит аддоны сервера только сам (compatmode) — галочки нет.
+          if (store.game.protocol.preloadFiles)
           Tooltip(
             message: tr('On: the launcher starts the game with the server\'s addons (-file, in the server\'s order) '
                 'and then connects, so the game does not load them while joining.\n'
@@ -1505,7 +1509,8 @@ class _ServersTabState extends State<ServersTab> {
       subtitle: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('${_formatSize(f.size)} · MD5 ${f.md5}', style: const TextStyle(fontSize: 11)),
+          Text('${_formatSize(f.size)} · ${FileHash.isMd5(f.md5) ? 'MD5' : 'XXH3'} ${f.md5}',
+              style: const TextStyle(fontSize: 11)),
           Tooltip(
             message: local != null && local.isNotEmpty ? local : '',
             child: Text(status, style: TextStyle(fontSize: 12, color: color)),

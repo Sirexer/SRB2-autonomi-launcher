@@ -2,7 +2,7 @@ name: Build releases
 
 on:
   push:
-    tags: ['v*']        # e.g. v0.1.0
+    tags: ['v*', 'beta-*']   # e.g. beta-release3, v1.0.0
   workflow_dispatch:     # manual run from the Actions tab
 
 permissions:
@@ -14,6 +14,9 @@ permissions:
 # and test Windows before shipping.
 env:
   FLUTTER_VERSION: '3.47.9'
+  # Версия лаунчера — тег релиза (по нему лаунчер узнаёт, вышла ли новая);
+  # у сборки не по тегу — пусто.
+  BUILD_VERSION: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || '' }}
 
 jobs:
   # Static analysis and unit tests. Not required by the release job,
@@ -69,6 +72,7 @@ jobs:
           --dart-define=BUILD_DATE="$(date -u '+%Y-%m-%d %H:%M UTC')"
           --dart-define=BUILD_COMMIT="${GITHUB_SHA::7}"
           --dart-define=BUILD_FLUTTER="$FLUTTER_VERSION"
+          --dart-define=BUILD_VERSION="$BUILD_VERSION"
         env:
           NO_OPUS_OGG_LIBS: '1'
 
@@ -118,6 +122,8 @@ jobs:
           cp packaging/pointer.txt "$APPDIR/usr/bin/pointer.txt"
           # Attribution of the data in the launcher (DB-IP, flags).
           cp packaging/NOTICE.txt "$APPDIR/usr/bin/NOTICE.txt"
+          # Custom games (BlanKart) offered on the first start.
+          cp packaging/another_games.json "$APPDIR/usr/bin/another_games.json"
 
           # Downloads from GitHub sometimes break off: retry, and show the error.
           curl -fSL --retry 5 --retry-delay 10 --retry-all-errors --connect-timeout 30 --max-time 300 \
@@ -151,6 +157,7 @@ jobs:
           --dart-define=BUILD_DATE="$(date -u '+%Y-%m-%d %H:%M UTC')"
           --dart-define=BUILD_COMMIT="${GITHUB_SHA::7}"
           --dart-define=BUILD_FLUTTER="$FLUTTER_VERSION"
+          --dart-define=BUILD_VERSION="$BUILD_VERSION"
         shell: bash
 
       # Плеер играет трекерные модули и музыку приставок библиотеками
@@ -197,11 +204,13 @@ jobs:
         run: bash packaging/fetch_antd.sh antd-windows-amd64.exe build/windows/x64/runner/Release/antd antd.exe
 
       # The repository the launcher offers to connect on the first start.
-      - name: Add pointer.txt and NOTICE.txt
+      - name: Add pointer.txt, NOTICE.txt and another_games.json
         run: |
           Copy-Item packaging\pointer.txt build\windows\x64\runner\Release\pointer.txt
           # Attribution of the data in the launcher (DB-IP, flags).
           Copy-Item packaging\NOTICE.txt build\windows\x64\runner\Release\NOTICE.txt
+          # Custom games (BlanKart) offered on the first start.
+          Copy-Item packaging\another_games.json build\windows\x64\runner\Release\another_games.json
 
       - name: Zip build
         run: Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath SRB2-Autonomi-Launcher-windows-x64.zip

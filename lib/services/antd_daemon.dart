@@ -256,6 +256,16 @@ class AntdDaemon {
     _proc = null;
   }
 
+  /// Останавливает наш демон совсем (перед обновлением лаунчера: новая
+  /// версия запустит свой).
+  static Future<void> shutdown() async {
+    _proc?.kill();
+    _proc = null;
+    try {
+      await _killOwnDaemons();
+    } catch (_) {}
+  }
+
   // --- Restarting a stuck daemon ---
 
   static final StreamController<void> _restartedCtrl = StreamController<void>.broadcast();

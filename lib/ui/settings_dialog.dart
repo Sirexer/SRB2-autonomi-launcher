@@ -14,11 +14,14 @@ import '../services/platform_utils.dart';
 import '../services/app_paths.dart';
 import '../services/save_guard.dart';
 import '../services/servers_store.dart';
-import '../theme/app_themes.dart';
 import 'addon_icon.dart';
+import 'appearance_pickers.dart';
 import 'file_actions.dart';
+import 'game_icon.dart';
+import 'games_settings.dart';
 import 'launch_panel.dart';
 import 'snack.dart';
+import 'update_dialog.dart';
 
 /// Что делать при запуске, если репозиторий по pointer указывает на новый
 /// файл: обновить сразу, спросить или не проверять.
@@ -32,7 +35,7 @@ enum TagOrder { alphabetical, groups }
 typedef TagDisplay = ({bool showGroup, TagOrder order, bool showAll});
 
 /// Разделы настроек.
-enum SettingsSection { general, game, addons, launch, servers, experimental }
+enum SettingsSection { general, games, game, addons, launch, servers, experimental }
 
 /// Окно настроек: разделы слева, содержимое справа. Изменения применяются сразу.
 class SettingsDialog extends StatefulWidget {
@@ -94,6 +97,9 @@ class SettingsDialog extends StatefulWidget {
   final String themeKey;
   final ValueChanged<String> onThemeChanged;
 
+  /// Набор игр изменился (включили/выключили, добавили/убрали свою).
+  final VoidCallback onGamesChanged;
+
   const SettingsDialog({
     super.key,
     this.initialSection = SettingsSection.general,
@@ -130,6 +136,7 @@ class SettingsDialog extends StatefulWidget {
     required this.onTagDisplayChanged,
     required this.themeKey,
     required this.onThemeChanged,
+    required this.onGamesChanged,
   });
 
   /// Открывает настройки на нужном разделе.
@@ -172,6 +179,7 @@ class _SettingsDialogState extends State<SettingsDialog> {
     widget.onTagDisplayChanged(v);
   }
   bool _restarting = false;
+  bool _checkingUpdate = false;
   bool? _restartOk;
 
   String? _folderError;
@@ -180,6 +188,7 @@ class _SettingsDialogState extends State<SettingsDialog> {
   /// Общие разделы и разделы игры (под выбором игры).
   static const _common = [
     (SettingsSection.general, Icons.tune, 'General'),
+    (SettingsSection.games, Icons.sports_esports_outlined, 'Games'),
     (SettingsSection.addons, Icons.extension_outlined, 'Addons'),
     (SettingsSection.experimental, Icons.science_outlined, 'Experimental'),
   ];
@@ -222,6 +231,19 @@ class _SettingsDialogState extends State<SettingsDialog> {
     }
   }
 
+  /// Игры включили/выключили: выбранная здесь выключена — к SRB2.
+  void _gamesChanged() {
+    widget.onGamesChanged();
+    final now = Games.find(_g.id);
+    if (now == null || !Games.isEnabled(now)) {
+      _loadGame(Games.srb2);
+    } else if (!identical(now, _g)) {
+      _loadGame(now); // своя игра заменена новым описанием
+    } else {
+      setState(() {});
+    }
+  }
+
   /// Выбор игры над её разделами.
   Widget _gamePicker() => Padding(
         padding: const EdgeInsets.fromLTRB(8, 4, 4, 6),
@@ -231,12 +253,12 @@ class _SettingsDialogState extends State<SettingsDialog> {
             isExpanded: true,
             borderRadius: BorderRadius.circular(8),
             items: [
-              for (final g in Games.all)
+              for (final g in Games.enabled)
                 DropdownMenuItem(
                   value: g,
                   child: Row(
                     children: [
-                      Image.asset(g.iconAsset, width: 20, height: 20, errorBuilder: (_, _, _) => const SizedBox(width: 20)),
+                      GameIcon(g, size: 20),
                       const SizedBox(width: 8),
                       Flexible(
                         child: Text(g.fullName,
@@ -352,6 +374,8 @@ class _SettingsDialogState extends State<SettingsDialog> {
     switch (_section) {
       case SettingsSection.general:
         return _page([_general()]);
+      case SettingsSection.games:
+        return _page([GamesSettings(onChanged: _gamesChanged)]);
       case SettingsSection.game:
         return _page([_game()]);
       case SettingsSection.addons:
@@ -447,55 +471,19 @@ class _SettingsDialogState extends State<SettingsDialog> {
   // --- General ---
 
   Widget _general() {
-    final i18n = I18n.instance;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _title(tr('Language')),
         _hint(tr('Language files are in the "lang" folder next to the launcher.')),
-        DropdownButtonFormField<String>(
-          initialValue: i18n.code,
-          decoration: const InputDecoration(border: OutlineInputBorder(), isDense: true),
-          items: [
-            for (final l in i18n.available)
-              DropdownMenuItem(
-                value: l.code,
-                child: Row(
-                  children: [
-                    // Флаг языка слева от названия (assets/flags); нет картинки — без него.
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(2),
-                      child: Image.asset('assets/flags/${l.flag}.png',
-                          width: 22,
-                          height: 16.5,
-                          fit: BoxFit.fill,
-                          errorBuilder: (_, _, _) => const SizedBox(width: 22)),
-                    ),
-                    const SizedBox(width: 10),
-                    Text(l.name),
-                  ],
-                ),
-              ),
-          ],
-          onChanged: (code) async {
-            if (code == null) return;
-            await i18n.load(code);
-            final prefs = await SharedPreferences.getInstance();
-            await prefs.setString('app_language', code);
-            if (mounted) setState(() {});
-          },
-        ),
+        LanguageDropdown(onChanged: () {
+          if (mounted) setState(() {});
+        }),
         const SizedBox(height: 16),
         _title(tr('Color theme')),
-        DropdownButtonFormField<String>(
-          initialValue: _themeKey,
-          decoration: const InputDecoration(border: OutlineInputBorder(), isDense: true),
-          items: [
-            for (final theme in AppThemes.availableThemes)
-              DropdownMenuItem<String>(value: theme['key'] as String, child: Text(tr(theme['name'] as String))),
-          ],
+        ThemeDropdown(
+          value: _themeKey,
           onChanged: (val) {
-            if (val == null) return;
             setState(() => _themeKey = val);
             widget.onThemeChanged(val);
           },
@@ -540,6 +528,47 @@ class _SettingsDialogState extends State<SettingsDialog> {
         SelectableText(
           BuildInfo.isLocal ? tr('Local build (no build date)') : BuildInfo.summary,
           style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
+        ),
+        const SizedBox(height: 8),
+        _title(tr('Updates')),
+        _hint(tr('New versions of the launcher come from its releases on GitHub.')),
+        FutureBuilder<SharedPreferences>(
+          future: SharedPreferences.getInstance(),
+          builder: (context, snap) {
+            final prefs = snap.data;
+            return SwitchListTile(
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              value: prefs?.getBool(UpdatePrefs.checkKey) ?? true,
+              onChanged: prefs == null
+                  ? null
+                  : (v) async {
+                      await prefs.setBool(UpdatePrefs.checkKey, v);
+                      if (mounted) setState(() {});
+                    },
+              title: Text(tr('Check for updates when the launcher starts')),
+            );
+          },
+        ),
+        Row(
+          children: [
+            OutlinedButton.icon(
+              icon: _checkingUpdate
+                  ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                  : const Icon(Icons.system_update_alt, size: 18),
+              label: Text(tr('Check for updates')),
+              onPressed: _checkingUpdate
+                  ? null
+                  : () async {
+                      setState(() => _checkingUpdate = true);
+                      await checkLauncherUpdateNow(context);
+                      if (mounted) setState(() => _checkingUpdate = false);
+                    },
+            ),
+            const SizedBox(width: 12),
+            Text(tr('Current version: {version}', {'version': currentLauncherVersion()}),
+                style: const TextStyle(fontSize: 12, color: Colors.grey)),
+          ],
         ),
         _title(tr('Launcher data')),
         _hint(AppPaths.portable
@@ -1009,10 +1038,15 @@ class _SettingsDialogState extends State<SettingsDialog> {
           CheckboxListTile(
             contentPadding: EdgeInsets.zero,
             controlAffinity: ListTileControlAffinity.leading,
-            value: store.preloadAddons,
-            onChanged: (v) => store.updateOptions((s) => s.preloadAddons = v ?? true),
+            value: store.preloadAddons && store.game.protocol.preloadFiles,
+            onChanged: store.game.protocol.preloadFiles
+                ? (v) => store.updateOptions((s) => s.preloadAddons = v ?? true)
+                : null,
             title: Text(tr('Load addons into the game before connecting')),
-            subtitle: Text(tr('On: the game starts with the server\'s addons (-file, in the server\'s order) and then connects, without the "Loading addons" screen. Off: the game connects first and loads them itself. Missing addons are downloaded before joining in both cases.')),
+            subtitle: Text(store.game.protocol.preloadFiles
+                ? tr('On: the game starts with the server\'s addons (-file, in the server\'s order) and then connects, without the "Loading addons" screen. Off: the game connects first and loads them itself. Missing addons are downloaded before joining in both cases.')
+                : tr('{game} loads the server\'s addons itself, the way the server loads them (addons loaded in advance may not match). Missing addons are still downloaded before joining.',
+                    {'game': store.game.name})),
           ),
           _title(tr('Master servers')),
           _hint(tr('Lists from all master servers are merged. The address is an http(s) URL or host:port '
@@ -1087,6 +1121,22 @@ class _SettingsDialogState extends State<SettingsDialog> {
                 'of the game, you cannot join them. Your servers are always shown.')),
             value: store.hideUnsupported,
             onChanged: (v) => store.updateOptions((s) => s.hideUnsupported = v),
+          ),
+          SwitchListTile(
+            dense: true,
+            contentPadding: EdgeInsets.zero,
+            title: Text(tr('Hide IPv6 addresses')),
+            subtitle: Text(tr('Servers with an IPv6 address: in practice you cannot join them, so they are not shown '
+                'or queried. Your servers are always shown.')),
+            value: store.hideIPv6,
+            onChanged: (v) {
+              store.updateOptions((s) => s.hideIPv6 = v);
+              if (v) return;
+              // Теперь показаны — опросить те, что ещё не опрашивались.
+              for (final r in store.rows) {
+                if (r.isIPv6 && r.result == null) store.queryServer(r.host, r.port, fullFileList: false);
+              }
+            },
           ),
           _title(tr('Local server list')),
           _hint(tr('Servers seen on the master server are saved locally, so they stay in the list (marked with a clock) when the master server is down or the server leaves it. A server is removed when it has not answered for the chosen time.')),

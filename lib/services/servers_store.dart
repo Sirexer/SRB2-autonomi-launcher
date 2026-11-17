@@ -74,6 +74,9 @@ class ServerRow {
   String get key => serverKey(host, port);
   String get address => connectAddress(host, port);
 
+  /// Адрес IPv6 (в адресе есть «:»).
+  bool get isIPv6 => host.contains(':');
+
   /// Имя с цветами SRB2: из ответа сервера, своё имя из избранного,
   /// имя из списка мастер-сервера или адрес.
   List<Srb2TextSpan> get nameSpans {
@@ -280,6 +283,10 @@ class ServersStore extends ChangeNotifier {
   /// version)» — другой версии игры, их не опросить и к ним не подключиться.
   bool hideUnsupported = true;
 
+  /// Скрывать серверы с адресом IPv6: на деле к ним не подключиться, а
+  /// опрос только ждёт ответа. Мои серверы показываются всегда.
+  bool hideIPv6 = true;
+
   /// Показывать только эти режимы игры (в нижнем регистре); пусто — все.
   final Set<String> shownGametypes = {};
   bool refreshing = false;
@@ -402,6 +409,7 @@ class ServersStore extends ChangeNotifier {
         hideModified = flag('hideModified', false);
         hideLocal = flag('hideLocal', false);
         hideUnsupported = flag('hideUnsupported', true);
+        hideIPv6 = flag('hideIPv6', true);
         shownGametypes
           ..clear()
           ..addAll((j['shownGametypes'] as List? ?? const []).map((e) => '$e'));
@@ -462,6 +470,7 @@ class ServersStore extends ChangeNotifier {
         'hideModified': hideModified,
         'hideLocal': hideLocal,
         'hideUnsupported': hideUnsupported,
+        'hideIPv6': hideIPv6,
         'shownGametypes': shownGametypes.toList(),
       }),
     );
@@ -661,7 +670,8 @@ class ServersStore extends ChangeNotifier {
   /// Опрашивает все серверы списка (не больше 16 одновременно).
   Future<void> queryAll() async {
     _bulk = true;
-    final queue = [for (final r in rows) (r.host, r.port)];
+    // Скрытые IPv6-серверы не опрашиваем (кроме своих).
+    final queue = [for (final r in rows) if (!hideIPv6 || !r.isIPv6 || r.favorite != null) (r.host, r.port)];
     Future<void> worker() async {
       while (queue.isNotEmpty) {
         final (host, port) = queue.removeLast();

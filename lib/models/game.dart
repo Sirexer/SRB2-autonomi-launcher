@@ -59,7 +59,7 @@ class GameDef {
   final List<String> linuxDataFolders;
 
   /// Иконка игры (assets/games).
-  String get iconAsset => 'assets/games/$id.png';
+  String get iconAsset => 'assets/games/$engine.png';
 
   /// Файлы игры с палитрой PLAYPAL (относительно папки игры) — для картинок
   /// уровней в формате Doom-патча.
@@ -89,6 +89,23 @@ class GameDef {
   /// MODID SRB2 для запроса версии (`versions/18`); у Kart Krew не нужен.
   final int modId;
 
+  /// Своя игра (описание в JSON): код встроенной игры, на которой она
+  /// основана; '' — встроенная. От него — параметры запуска, цвета, режимы
+  /// и т.п. ([engine]); настройки и аддоны — по [id].
+  final String engineId;
+
+  /// Своя игра: иконка — файл (PNG); null — иконка основы.
+  final String? iconFile;
+
+  /// Своя игра: показывать и аддоны основы (`games` с кодом [engine]).
+  final bool baseAddons;
+
+  /// Своя игра: свои файлы игры с расширением аддонов (как [ownAddonFiles]).
+  final List<String> customOwnFiles;
+
+  /// Описание своей игры, как оно пришло в JSON (для экспорта).
+  final Map<String, dynamic>? definition;
+
   const GameDef({
     required this.id,
     required this.name,
@@ -116,13 +133,27 @@ class GameDef {
     this.baseSkinFiles = const [],
     required this.modVersion,
     this.modId = 0,
+    this.engineId = '',
+    this.iconFile,
+    this.baseAddons = false,
+    this.customOwnFiles = const [],
+    this.definition,
   });
+
+  /// Своя игра (из JSON), а не встроенная.
+  bool get isCustom => engineId.isNotEmpty;
+
+  /// Код встроенной игры, как которая ведёт себя эта: у встроенной — [id].
+  String get engine => engineId.isEmpty ? id : engineId;
+
+  /// Код основы, чьи аддоны тоже показываются ([baseAddons]); null — нет.
+  String? get addonBase => baseAddons && engine != id ? engine : null;
 
   /// Переменная режима Encore (зеркальная трасса с палитрой Encore):
   /// `+kartencore On` в SRB2Kart, `+encore On` в Ring Racers; null — режима
   /// нет. Игра включает его и при -warp, без открытия в меню; только в Race
   /// (в Ring Racers ещё в Versus).
-  String? get encoreCvar => switch (id) {
+  String? get encoreCvar => switch (engine) {
         'srb2kart' => 'kartencore',
         'drrr' => 'encore',
         _ => null,
@@ -131,18 +162,18 @@ class GameDef {
   /// Скорость игры (Gear): переменная и её значения (значение → подпись).
   /// SRB2Kart — `kartspeed` 0/1/2 (Easy/Normal/Hard), Ring Racers —
   /// `gamespeed` 0/1/2 (Gear 1–3; без параметра — Auto Gear). null — нет.
-  (String, List<(String, String)>)? get gearCvar => switch (id) {
+  (String, List<(String, String)>)? get gearCvar => switch (engine) {
         'srb2kart' => ('kartspeed', const [('0', 'Gear 1 (Easy)'), ('1', 'Gear 2 (Normal)'), ('2', 'Gear 3 (Hard)')]),
         'drrr' => ('gamespeed', const [('0', 'Gear 1'), ('1', 'Gear 2'), ('2', 'Gear 3')]),
         _ => null,
       };
 
   /// Боты (Ring Racers): `bots` 0 (Off) … 13 (Lv.MAX). null — в игре их нет.
-  String? get botsCvar => id == 'drrr' ? 'bots' : null;
+  String? get botsCvar => engine == 'drrr' ? 'bots' : null;
 
   /// Свои файлы игры с расширением аддонов (.pk3): в списке «В папке игры» их
   /// нет. У SRB2Kart свои файлы — .kart/.srb/.dta, туда они и так не попадают.
-  List<String> get ownAddonFiles => switch (id) {
+  List<String> get ownAddonFiles => isCustom ? customOwnFiles : switch (id) {
         'srb2' => const ['srb2.pk3', 'zones.pk3', 'characters.pk3', 'patch.pk3', 'music.pk3', 'patch_music.pk3'],
         'srb2legacy' => const ['legacy.pk3'],
         'drrr' => const [
@@ -154,7 +185,7 @@ class GameDef {
       };
 
   /// Встроенные цвета персонажей (номер = SKINCOLOR_*).
-  List<(String, List<int>)> get skinColors => switch (id) {
+  List<(String, List<int>)> get skinColors => switch (engine) {
         'srb2kart' => VanillaSkinColors.srb2kart,
         'drrr' => VanillaSkinColors.drrr,
         'srb2legacy' => VanillaSkinColors.srb2legacy,
@@ -164,28 +195,29 @@ class GameDef {
   /// Кадры спрайта XTRA для иконки персонажа по порядку предпочтения:
   /// у SRB2 — C (жизни), у Ring Racers — B (как в chars.pk3:
   /// skins/<персонаж>/XTRAB0), затем A и C.
-  String get skinIconFrames => id == 'drrr' ? 'BAC' : 'C';
+  String get skinIconFrames => engine == 'drrr' ? 'BAC' : 'C';
 
   /// Портрет XTRAB0 уже в цветах персонажа (SRB2); в Ring Racers XTRAB —
   /// значок «Wanted», его без перекраски не показать.
-  bool get skinPortraits => id != 'drrr';
+  bool get skinPortraits => engine != 'drrr';
 
   /// В выборе персонажа (Launch) — портрет (charsel в SRB2 Legacy), а не
   /// маленькая иконка.
-  bool get pickerPortraits => id == 'srb2legacy';
+  bool get pickerPortraits => engine == 'srb2legacy';
 
   /// У Соника, Тейлза и Наклза описания из кода SRB2 (меню выбора персонажа).
-  bool get vanillaSkinDescriptions => id == 'srb2' || id == 'srb2legacy';
+  bool get vanillaSkinDescriptions => engine == 'srb2' || engine == 'srb2legacy';
 
   /// Есть консольная переменная http_source (HTTP-зеркало аддонов); в SRB2
   /// 2.1 (Legacy) её нет.
-  bool get hasHttpSource => id != 'srb2legacy';
+  bool get hasHttpSource => engine != 'srb2legacy';
 
   /// SRB2 2.1 (Legacy): Соник задан в коде игры, а не в S_SKIN.
-  bool get builtInSonic => id == 'srb2legacy';
+  bool get builtInSonic => engine == 'srb2legacy';
 
   /// Вкладка Progress по gamedata.dat: SRB2 2.2, Legacy (форк 2.1) и
   /// SRB2Kart (kartdata.dat). У Ring Racers — своя вкладка (ringdata.dat).
+  /// У своих игр файлы прогресса бывают другими — у них вкладки нет.
   bool get hasProgress => id == 'srb2' || id == 'srb2legacy' || id == 'srb2kart';
 
   /// Цвета для выбора `+color` в Launch: имена — как их принимает игра,
@@ -194,7 +226,7 @@ class GameDef {
   /// Супер-цвета не предлагаются.
   List<(String, List<int>)> get launchSkinColors {
     bool superColor(String n) => n.startsWith('Super ') || RegExp(r'^[TK]?SUPER\d').hasMatch(n);
-    if (id != 'srb2legacy') {
+    if (engine != 'srb2legacy') {
       return [for (final c in skinColors) if (c.$1 != 'None' && !superColor(c.$1)) c];
     }
     String key(String n) => n.toUpperCase().replaceAll(RegExp(r'[\s_]'), '');
@@ -208,7 +240,7 @@ class GameDef {
 
   /// startcolor по умолчанию (Sk_SetDefaultValue): какие 16 индексов
   /// палитры перекрашиваются в цвет персонажа.
-  int get skinStartColor => id == 'srb2kart' || id == 'srb2legacy' ? 160 : 96;
+  int get skinStartColor => engine == 'srb2kart' || engine == 'srb2legacy' ? 160 : 96;
 
   /// Ключ настройки этой игры.
   String key(String base) => '$prefsPrefix$base';
@@ -246,7 +278,7 @@ class GameDef {
   };
 
   /// TypeOfLevel встроенного режима [gametype]; null — режим не встроенный.
-  List<String>? gametypeLevels(String gametype) => _gametypeLevels[id]?[gametype.trim().toLowerCase()];
+  List<String>? gametypeLevels(String gametype) => _gametypeLevels[engine]?[gametype.trim().toLowerCase()];
 
   /// Имя TypeOfLevel как в таблице игры: «Co-op» → COOP, «Single Player» → SOLO.
   static String normalizeLevelType(String t) {
@@ -445,7 +477,113 @@ class Games {
     musicFiles: ['srb2.srb', 'maps.kart', 'sounds.kart', 'music.kart'],
   );
 
-  static const all = [srb2, srb2legacy, srb2kart, drrr];
+  /// Встроенные игры: SRB2 есть всегда, остальные можно выключить.
+  static const builtIn = [srb2, srb2legacy, srb2kart, drrr];
+
+  /// Свои игры (описания в JSON; CustomGames загружает их из настроек).
+  static List<GameDef> custom = [];
+
+  /// Выключенные игры (коды): в переключателе их нет. SRB2 не выключается.
+  static Set<String> disabled = {};
+
+  /// Все известные игры: встроенные и свои, включённые и выключенные.
+  static List<GameDef> get all => [...builtIn, ...custom];
+
+  /// Включённые: их показывает переключатель игры.
+  static List<GameDef> get enabled => [for (final g in all) if (g == srb2 || !disabled.contains(g.id)) g];
+
+  static bool isEnabled(GameDef g) => g == srb2 || !disabled.contains(g.id);
+
+  /// Код занят встроенной игрой или её синонимом.
+  static bool isReserved(String id) {
+    final n = normalizeId(id);
+    return builtIn.any((g) => g.id == n);
+  }
+
+  /// Своя игра из описания [j] (JSON): `id`, `name`, `base` (код встроенной
+  /// игры) обязательны; остальное — как у основы, если не задано.
+  /// [iconFile] — файл иконки (уже скопированный). FormatException — с
+  /// понятным текстом, что не так.
+  static GameDef fromDefinition(Map<String, dynamic> j, {String? iconFile}) {
+    String str(String k) => j[k] is String ? (j[k] as String).trim() : '';
+    List<String>? list(String k) {
+      final v = j[k];
+      if (v is String) return [v];
+      if (v is List) return [for (final x in v) if ('$x'.trim().isNotEmpty) '$x'.trim()];
+      return null;
+    }
+
+    final id = str('id').toLowerCase();
+    if (!RegExp(r'^[a-z0-9][a-z0-9_.-]{1,40}$').hasMatch(id)) {
+      throw FormatException('"id" must be 2-41 lowercase letters, digits, "_", "-" or "." (got "${j['id']}")');
+    }
+    if (isReserved(id)) throw FormatException('"$id" is a built-in game');
+    final name = str('name');
+    if (name.isEmpty) throw FormatException('$id: "name" is missing');
+    final baseId = normalizeId(str('base'));
+    final base = builtIn.where((g) => g.id == baseId).firstOrNull;
+    if (base == null) throw FormatException('$id: "base" must be one of srb2, srb2legacy, srb2kart, drrr');
+    final NetProtocol protocol;
+    try {
+      final p = j['protocol'];
+      protocol = p == null || (p is String && p.trim().isEmpty) ? base.protocol : NetProtocol.fromJson(p);
+    } on FormatException catch (e) {
+      throw FormatException('$id: ${e.message}');
+    }
+    final api = switch (str('master_api').toLowerCase()) {
+      '' => base.masterApi,
+      'srb2' => MasterApi.srb2,
+      'kart' => MasterApi.kart,
+      final x => throw FormatException('$id: "master_api" must be srb2 or kart (got "$x")'),
+    };
+    final exe = j['executables'] is Map ? j['executables'] as Map : const {};
+    List<String>? exeList(String k) {
+      final v = exe[k];
+      if (v is String) return [v];
+      if (v is List) return [for (final x in v) if ('$x'.trim().isNotEmpty) '$x'.trim()];
+      return null;
+    }
+
+    final windows = exeList('windows') ?? base.windowsExecutables;
+    final linux = exeList('linux') ?? base.linuxExecutables;
+    final download = list('download_path');
+    int intOf(String k, int fallback) => j[k] is num ? (j[k] as num).toInt() : int.tryParse('${j[k] ?? ''}') ?? fallback;
+    return GameDef(
+      id: id,
+      name: name,
+      fullName: str('full_name').isEmpty ? name : str('full_name'),
+      version: str('version').isEmpty ? base.version : str('version'),
+      mainFile: str('main_file').isEmpty ? base.mainFile : str('main_file'),
+      downloadPath: download == null
+          ? base.downloadPath
+          : [for (final d in download) ...d.split(RegExp(r'[/\\]')).where((x) => x.isNotEmpty)],
+      defaultMasters: list('masters') ?? base.defaultMasters,
+      masterApi: api,
+      protocol: protocol,
+      gametypes: list('gametypes') ?? base.gametypes,
+      hasRooms: j['has_rooms'] is bool ? j['has_rooms'] as bool : base.hasRooms,
+      prefsPrefix: 'game.$id.',
+      windowsCommand: windows.isEmpty ? base.windowsCommand : windows.first,
+      linuxCommand: linux.isEmpty ? base.linuxCommand : linux.first,
+      windowsExecutables: windows,
+      linuxExecutables: linux,
+      executableHints: list('executable_hints') ?? [id],
+      linuxDataFolders: list('linux_data_folders') ?? const [],
+      lanConnect: base.lanConnect,
+      paletteFiles: list('palette_files') ?? base.paletteFiles,
+      baseMapFiles: list('map_files') ?? base.baseMapFiles,
+      pictureInsideMaps: j['picture_inside_maps'] is bool ? j['picture_inside_maps'] as bool : base.pictureInsideMaps,
+      musicFiles: list('music_files') ?? base.musicFiles,
+      baseSkinFiles: list('skin_files') ?? base.baseSkinFiles,
+      modVersion: intOf('mod_version', base.modVersion),
+      modId: intOf('mod_id', base.modId),
+      engineId: base.id,
+      iconFile: iconFile,
+      baseAddons: j['base_addons'] == true,
+      customOwnFiles: list('own_files') ?? const [],
+      definition: Map<String, dynamic>.from(j),
+    );
+  }
 
   /// Названия стандартных мастер-серверов (адрес → название).
   static const masterNames = {
@@ -476,11 +614,14 @@ class Games {
     return _aliases[s] ?? s;
   }
 
-  static GameDef byId(String? id) {
+  static GameDef byId(String? id) => find(id) ?? srb2;
+
+  /// Игра с кодом [id] (встроенная или своя); null — такой нет.
+  static GameDef? find(String? id) {
     final n = normalizeId(id ?? '');
     for (final g in all) {
       if (g.id == n) return g;
     }
-    return srb2;
+    return null;
   }
 }

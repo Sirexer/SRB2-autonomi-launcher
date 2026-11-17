@@ -268,7 +268,7 @@ class LaunchOptions {
     if (defaultColor) {
       // Ring Racers сам берёт цвет персонажа по значению Default; SRB2 и
       // SRB2Kart — только по имени цвета (неизвестен — игра решит сама).
-      final color = game.id == 'drrr' ? 'Default' : skinColor.trim();
+      final color = game.engine == 'drrr' ? 'Default' : skinColor.trim();
       if (color.isNotEmpty) args.addAll(['+color', color]);
     }
 

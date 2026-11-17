@@ -418,7 +418,7 @@ class _LaunchOptionsPanelState extends State<LaunchOptionsPanel> {
                 onChanged: (v) => _setCvar(encore, v ? 'On' : ''),
               ),
             if (s.game.gearCvar != null || s.game.botsCvar != null) _gearAndBots(),
-            if (s.game.id == 'srb2') _flag(LaunchFlags.ultimate, danger: true),
+            if (s.game.engine == 'srb2') _flag(LaunchFlags.ultimate, danger: true),
             _flag(LaunchFlags.noData),
             _flag(LaunchFlags.resetData, danger: true),
           ]),
@@ -616,7 +616,7 @@ class _LaunchOptionsPanelState extends State<LaunchOptionsPanel> {
             if (encore != null && _encoreOn(encore)) '+$encore On',
             if (s.game.gearCvar case (final gear, _)) cvar(gear),
             if (s.game.botsCvar case final bots?) cvar(bots),
-            if (s.game.id == 'srb2') ...flags([LaunchFlags.ultimate]),
+            if (s.game.engine == 'srb2') ...flags([LaunchFlags.ultimate]),
             ...flags([LaunchFlags.noData, LaunchFlags.resetData]),
           ],
         'player' => [
@@ -1058,7 +1058,7 @@ class _LaunchOptionsPanelState extends State<LaunchOptionsPanel> {
   Widget _defaultColorToggle() {
     void toggle(bool v) => s.updateOptions((o) => o.defaultColor = v);
     return Tooltip(
-      message: s.game.id == 'drrr'
+      message: s.game.engine == 'drrr'
           ? tr('Always the own color of the character: +color Default instead of the color on the left.')
           : tr('Always the own color of the character (prefcolor of its S_SKIN) instead of the color on the left: '
               'the launcher passes it as +color. Needs +skin; works in multiplayer.'),

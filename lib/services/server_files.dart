@@ -5,6 +5,7 @@ import 'package:path/path.dart' as p;
 
 import '../models/srb2_server.dart';
 import 'autonomi_service.dart';
+import 'file_hash.dart';
 import 'platform_utils.dart';
 
 /// Индекс файлов папки игры по имени — чтобы понять, какие аддоны сервера
@@ -56,10 +57,18 @@ class LocalFileIndex {
     return LocalFileIndex._(root, byName);
   }
 
-  /// Путь к файлу с таким именем и MD5 или null.
+  /// Путь к файлу с таким именем и контрольной суммой или null.
   Future<String?> find(ServerFile file) async {
     for (final path in _byName[file.name.toLowerCase()] ?? const <String>[]) {
-      if (await md5Of(path) == file.md5) return path;
+      if (!FileHash.isMd5(file.md5)) {
+        // XXH3 (BlanKart): сначала размер — не считать сумму зря.
+        try {
+          if (File(path).lengthSync() != file.size) continue;
+        } catch (_) {
+          continue;
+        }
+      }
+      if (await hashOf(path, file.md5) == file.md5) return path;
     }
     return null;
   }
@@ -94,15 +103,24 @@ class LocalFileIndex {
       _byName.putIfAbsent(p.basename(path).toLowerCase(), () => []).add(path);
 
   /// MD5 с кэшем по размеру и времени изменения файла.
-  static Future<String?> md5Of(String path) async {
+  static Future<String?> md5Of(String path) => _cached(_md5Cache, path, AutonomiService.calculateFileMd5);
+
+  static final Map<String, (int, int, String)> _xxh3Cache = {};
+
+  /// Сумма файла того же вида, что [like]: MD5 или XXH3-64 (BlanKart).
+  static Future<String?> hashOf(String path, String like) =>
+      FileHash.isMd5(like) ? md5Of(path) : _cached(_xxh3Cache, path, FileHash.xxh3OfFile);
+
+  static Future<String?> _cached(
+      Map<String, (int, int, String)> cache, String path, Future<String?> Function(String) compute) async {
     try {
       final st = await File(path).stat();
-      final cached = _md5Cache[path];
+      final cached = cache[path];
       final mtime = st.modified.millisecondsSinceEpoch;
       if (cached != null && cached.$1 == st.size && cached.$2 == mtime) return cached.$3;
-      final md5 = await AutonomiService.calculateFileMd5(path);
-      if (md5 != null) _md5Cache[path] = (st.size, mtime, md5.toLowerCase());
-      return md5?.toLowerCase();
+      final hash = (await compute(path))?.toLowerCase();
+      if (hash != null) cache[path] = (st.size, mtime, hash);
+      return hash;
     } catch (_) {
       return null;
     }
@@ -121,17 +139,25 @@ class ServerFileDownloader {
     if (safe == null) return null;
     final direct = p.join(downloadDir, safe);
     if (!await File(direct).exists()) return direct;
-    if (await LocalFileIndex.md5Of(direct) == file.md5) return direct;
+    if (await LocalFileIndex.hashOf(direct, file.md5) == file.md5) return direct;
     return p.join(downloadDir, p.basenameWithoutExtension(safe), file.md5.substring(0, 8), safe);
   }
 
-  /// HTTP-зеркало сервера (http_source): SRB2 качает `<источник>/<имя>?md5=<md5>`.
+  /// HTTP-зеркало сервера (http_source): SRB2 качает `<источник>/<имя>?md5=<md5>`,
+  /// BlanKart (без MD5) — просто `<источник>/<имя>`.
   static Uri mirrorUrl(String httpSource, ServerFile file) {
     var base = httpSource.trim();
     while (base.endsWith('/')) {
       base = base.substring(0, base.length - 1);
     }
-    return Uri.parse('$base/${Uri.encodeComponent(file.name)}?md5=${file.md5}');
+    final query = FileHash.isMd5(file.md5) ? '?md5=${file.md5}' : '';
+    return Uri.parse('$base/${Uri.encodeComponent(file.name)}$query');
+  }
+
+  /// Совпадает ли сумма скачанного файла с той, что прислал сервер.
+  static Future<bool> checksumMatches(String path, ServerFile file) async {
+    final hash = FileHash.isMd5(file.md5) ? await AutonomiService.calculateFileMd5(path) : await FileHash.xxh3OfFile(path);
+    return hash?.toLowerCase() == file.md5;
   }
 
   /// Можно ли качать с этого зеркала (только http/https, как в игре).
@@ -140,7 +166,7 @@ class ServerFileDownloader {
     return uri != null && (uri.scheme == 'http' || uri.scheme == 'https') && uri.host.isNotEmpty;
   }
 
-  /// Скачивает файл с зеркала в [targetPath] и проверяет размер и MD5.
+  /// Скачивает файл с зеркала в [targetPath] и проверяет размер и сумму.
   static Future<void> downloadFromMirror({
     required String httpSource,
     required ServerFile file,
@@ -172,9 +198,8 @@ class ServerFileDownloader {
       if (file.size > 0 && received != file.size) {
         throw const FormatException('Size mismatch');
       }
-      final md5 = await AutonomiService.calculateFileMd5(part.path);
-      if (md5?.toLowerCase() != file.md5) {
-        throw const FormatException('MD5 mismatch');
+      if (!await checksumMatches(part.path, file)) {
+        throw FormatException(FileHash.isMd5(file.md5) ? 'MD5 mismatch' : 'Checksum mismatch');
       }
       await part.rename(targetPath);
     } catch (_) {

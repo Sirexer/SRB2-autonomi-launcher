@@ -5,7 +5,7 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 
 import '../models/srb2_server.dart';
-import 'autonomi_service.dart';
+import 'server_files.dart';
 import 'srb2_query.dart';
 
 /// Ошибка скачивания с сервера (понятный пользователю текст).
@@ -303,8 +303,9 @@ class Srb2FileTransfer {
       if (file.size > 0 && total != file.size) {
         throw TransferException('Size mismatch: expected ${file.size}, got $total');
       }
-      final md5 = await AutonomiService.calculateFileMd5(part.path);
-      if (md5?.toLowerCase() != file.md5) throw const TransferException('MD5 mismatch');
+      if (!await ServerFileDownloader.checksumMatches(part.path, file)) {
+        throw TransferException(file.md5.length == 32 ? 'MD5 mismatch' : 'Checksum mismatch');
+      }
       await part.rename(targetPath);
     } catch (_) {
       try {

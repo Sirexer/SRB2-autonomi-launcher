@@ -13,6 +13,10 @@ import 'services/app_log.dart';
 import 'services/addon_updates.dart';
 import 'services/app_paths.dart';
 import 'services/notices.dart';
+import 'services/custom_games.dart';
+import 'ui/first_run_wizard.dart';
+import 'ui/update_dialog.dart';
+import 'services/launcher_update.dart';
 import 'services/save_guard.dart';
 import 'services/launch_state.dart';
 import 'services/game_progress.dart';
@@ -54,6 +58,7 @@ import 'ui/player_tab.dart';
 import 'ui/progress_tab.dart';
 import 'ui/save_guard_dialogs.dart';
 import 'ui/notifications_button.dart';
+import 'ui/game_icon.dart';
 import 'ui/map_picker.dart';
 import 'ui/servers_tab.dart';
 import 'ui/settings_dialog.dart';
@@ -81,8 +86,13 @@ Future<void> main(List<String> args) async {
   PaintingBinding.instance.imageCache.maximumSizeBytes = 40 << 20;
   // Язык интерфейса: файлы в папке lang рядом с лаунчером.
   final prefs = await SharedPreferences.getInstance();
+  // Свои игры (описания в JSON) и выключенные — до первого обращения к играм.
+  await CustomGames.load(prefs);
+  // Остатки прошлого обновления лаунчера (*.old, распаковка).
+  unawaited(LauncherUpdate.cleanup());
   await I18n.instance.discover();
-  await I18n.instance.load(prefs.getString('app_language') ?? 'en');
+  // Пока язык не выбран (мастер первого запуска, Settings) — язык системы.
+  await I18n.instance.load(prefs.getString('app_language') ?? I18n.instance.systemLanguage());
   // Ошибка построения части окна — не серое поле, а понятный текст
   // (и подробности в консоли), чтобы такие ошибки было видно сразу.
   ErrorWidget.builder = (details) => Material(
@@ -461,7 +471,7 @@ class _MainLauncherScreenState extends State<MainLauncherScreen> {
         for (final e in manifestGroups.entries)
           e.key: [
             for (final mod in e.value)
-              if (mod.forGame(_game.id) case final m?) m,
+              if (mod.forGame(_game.id, orBase: _game.addonBase) case final m?) m,
           ],
       };
   List<String> selectedFilesQueue = [];
@@ -626,7 +636,8 @@ class _MainLauncherScreenState extends State<MainLauncherScreen> {
     // чтобы список аддонов и настройки появились сразу, а не после его запуска.
     final daemonFuture = AntdDaemon.ensureRunning();
     final prefs = await SharedPreferences.getInstance();
-    _game = Games.byId(prefs.getString('app_game'));
+    final savedGame = Games.byId(prefs.getString('app_game'));
+    _game = Games.isEnabled(savedGame) ? savedGame : Games.srb2; // выключенная — SRB2
     // Экзешники (старая "Launch command" переносится в список автоматически)
     // и серверы текущей игры загружаются при первом обращении.
     _launch;
@@ -731,7 +742,7 @@ class _MainLauncherScreenState extends State<MainLauncherScreen> {
     }
 
     // pointer.txt — сразу, не дожидаясь antd: «Подключить» в окне сам его ждёт.
-    unawaited(_offerPointerFile(prefs));
+    unawaited(_firstRun(prefs));
     final daemonOk = await daemonFuture;
     if (!mounted) return;
     setState(() => daemonReady = daemonOk);
@@ -787,7 +798,123 @@ class _MainLauncherScreenState extends State<MainLauncherScreen> {
     }
   }
 
-  /// Первый запуск: `pointer.txt` рядом с лаунчером — предложить подключить
+  /// Первый запуск — мастер (репозиторий, игры, экспериментальное), один раз;
+  /// потом — только новый pointer.txt.
+  Future<void> _firstRun(SharedPreferences prefs) async {
+    const doneKey = 'setup_done';
+    if (prefs.getBool(doneKey) == true) {
+      // Исправленные описания своих игр из новой сборки.
+      if (await CustomGames.refreshFromBundled(prefs) > 0 && mounted) _gamesChanged();
+      await _offerPointerFile(prefs);
+      // Новая версия лаунчера — окно с изменениями (не сразу: пусть загрузится).
+      await Future<void>.delayed(const Duration(seconds: 3));
+      if (mounted) await checkLauncherUpdateOnStart(context);
+      return;
+    }
+    const offeredKey = 'pointer_file_offered';
+    var pointer = AppPaths.pointerFromFile();
+    if (pointer != null &&
+        (prefs.getString(offeredKey) == pointer ||
+            prefs.getBool('default_repository_added') == true ||
+            _repoPointers.containsValue(pointer))) {
+      pointer = null; // уже предлагался или подключён
+    }
+    final bundledPath = CustomGames.bundledPath();
+    final bundled = await bundledGameDefinitions();
+    await WidgetsBinding.instance.endOfFrame;
+    if (!mounted) return;
+    final choice = await FirstRunWizard.show(
+      context,
+      FirstRunWizard(
+        pointer: pointer,
+        bundledGames: bundled,
+        themeKey: widget.currentThemeKey,
+        onThemeChanged: widget.onThemeChanged,
+        folderOf: _folderOf,
+        executableOf: (g) async {
+          // Только путь: команда по умолчанию (srb2win.exe) — ещё не выбор.
+          final program = (await _launchOf(g)).defaultExecutable?.program;
+          return program != null && (program.contains('/') || program.contains(r'\')) ? program : null;
+        },
+        player: _playerEnabled,
+        progress: _progressEnabled,
+        saveProtection: SaveGuard.enabled,
+      ),
+    );
+    if (choice == null || !mounted) return;
+    await prefs.setBool(doneKey, true);
+    // Язык, показанный в мастере (системный или выбранный), — теперь выбран.
+    await prefs.setString('app_language', I18n.instance.code);
+    final filePointer = AppPaths.pointerFromFile();
+    if (filePointer != null) await prefs.setString(offeredKey, filePointer);
+
+    for (final g in Games.builtIn) {
+      await CustomGames.setEnabled(prefs, g.id, !choice.disabledGames.contains(g.id));
+    }
+    for (final d in choice.addGames) {
+      try {
+        await CustomGames.add(prefs, d, baseDir: bundledPath == null ? null : p.dirname(bundledPath));
+      } catch (e) {
+        AppLog.console('[games] could not add ${d['id']}: $e');
+      }
+    }
+    for (final id in choice.declinedGames) {
+      if (Games.custom.any((g) => g.id == id)) await CustomGames.remove(prefs, id);
+    }
+    for (final MapEntry(key: id, value: path) in choice.paths.entries) {
+      final g = Games.find(id);
+      if (g == null) continue;
+      if (path.folder.isNotEmpty) await _setGameFolderOf(g, path.folder);
+      if (path.executable.isNotEmpty) await _setDefaultExecutable(g, path.executable);
+    }
+    if (choice.player != _playerEnabled) await _setPlayerEnabled(choice.player);
+    if (choice.progress != _progressEnabled) await _setProgressEnabled(choice.progress);
+    if (choice.saveProtection != SaveGuard.enabled) await _setSaveProtection(choice.saveProtection);
+    if (!mounted) return;
+    _gamesChanged();
+    if (choice.connectRepository && pointer != null) unawaited(_connectPointerRepository(pointer));
+  }
+
+  /// Сборка [path] игры [g] — по умолчанию (из мастера первого запуска).
+  /// Единственная сборка — команда без пути (srb2win.exe) — заменяется.
+  Future<void> _setDefaultExecutable(GameDef g, String path) async {
+    final launch = await _launchOf(g);
+    final same = launch.executables.where((e) => PlatformUtils.samePath(e.program, path)).firstOrNull;
+    if (same != null) return launch.setDefault(same.id);
+    final command = PlatformUtils.quoteIfNeeded(path);
+    final only = launch.executables.length == 1 ? launch.executables.single : null;
+    if (only != null && !only.program.contains('/') && !only.program.contains(r'\')) {
+      launch.updateExecutable(only.copyWith(name: launch.uniqueName(path), command: command));
+      return;
+    }
+    final e = LaunchExecutable(id: LaunchExecutable.newId(), name: launch.uniqueName(path), command: command);
+    launch.addExecutable(e);
+    launch.setDefault(e.id);
+  }
+
+  /// Скачивает и подключает репозиторий по [pointer] (выбран в мастере);
+  /// не вышло — окно «Добавить репозиторий» с ним, чтобы повторить.
+  Future<void> _connectPointerRepository(String pointer) async {
+    showSnack(context, SnackBar(content: Text(tr('Downloading the repository...'))));
+    try {
+      if (!await AntdDaemon.ensureRunning()) throw Exception(tr('Autonomi daemon is not running'));
+      final (text, viaPointer) = await AutonomiService.downloadRepository(pointer);
+      if (text == null) throw Exception(tr('Failed to download index by Autonomi hash'));
+      final decoded = jsonDecode(text);
+      final name = (decoded is Map ? decoded['repository_name'] : null) ?? tr('Unnamed Repository');
+      if (!mounted) return;
+      await _addRepository('$name', text, pointer: viaPointer);
+    } catch (e) {
+      AppLog.console('Repository pointer $pointer: $e');
+      if (!mounted) return;
+      await _openAddManifestDialog(
+        pointer: pointer,
+        intro: tr('Could not download the repository: {error}', {'error': e}),
+      );
+    }
+  }
+
+  /// Новый `pointer.txt` рядом с лаунчером (после мастера) — предложить подключить
   /// репозиторий по нему (окно «Подключить репозиторий» с этим pointer).
   /// Предлагается один раз на pointer; если он уже подключён — не предлагается.
   Future<void> _offerPointerFile(SharedPreferences prefs) async {
@@ -1042,13 +1169,29 @@ class _MainLauncherScreenState extends State<MainLauncherScreen> {
       localMd5Cache = {};
       _localPaths = {};
       _conflictPaths = {};
-      selectedMod = original?.forGame(game.id);
+      selectedMod = original?.forGame(game.id, orBase: game.addonBase);
     });
     _launch;
     _servers;
     _loadGameState(prefs);
     if (selectedMod != null && srb2FolderPath != null) _checkModFilesStatus(selectedMod!);
     _refreshDownloaded();
+  }
+
+  /// Набор игр изменился (Settings → Games): выключенная/убранная текущая
+  /// игра — к SRB2, своя игра с новым описанием — заново.
+  void _gamesChanged() {
+    // Серверы и сборки, собранные по старому описанию своей игры.
+    _serversByGame.removeWhere((id, s) => !identical(Games.find(id), s.game));
+    _launchByGame.removeWhere((id, l) => !identical(Games.find(id), l.game));
+    final now = Games.find(_game.id);
+    if (now == null || !Games.isEnabled(now)) {
+      _switchGame(Games.srb2);
+    } else if (!identical(now, _game)) {
+      _switchGame(now);
+    } else {
+      setState(() {});
+    }
   }
 
   /// Переключатель игры на месте заголовка окна и кнопка «Открыть папку игры».
@@ -1076,13 +1219,14 @@ class _MainLauncherScreenState extends State<MainLauncherScreen> {
       onSelected: _switchGame,
       position: PopupMenuPosition.under,
       itemBuilder: (context) => [
-        for (final g in Games.all)
+        // Только включённые игры (Settings → Games).
+        for (final g in Games.enabled)
           PopupMenuItem(
             value: g,
             child: ListTile(
               dense: true,
               contentPadding: EdgeInsets.zero,
-              leading: Image.asset(g.iconAsset, width: 28, height: 28, filterQuality: FilterQuality.medium),
+              leading: GameIcon(g, size: 28),
               trailing: g == _game ? Icon(Icons.check, color: Theme.of(context).colorScheme.primary) : null,
               title: Text(g.fullName),
               subtitle: g.name == g.fullName ? null : Text(g.name),
@@ -1094,7 +1238,7 @@ class _MainLauncherScreenState extends State<MainLauncherScreen> {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Image.asset(_game.iconAsset, width: 26, height: 26, filterQuality: FilterQuality.medium),
+            GameIcon(_game, size: 26),
             const SizedBox(width: 10),
             Flexible(
               child: Text(_game.fullName, overflow: TextOverflow.ellipsis),
@@ -1272,6 +1416,7 @@ class _MainLauncherScreenState extends State<MainLauncherScreen> {
         launchOf: _launchOf,
         serversOf: (g) => _serversByGame.putIfAbsent(g.id, () => ServersStore(g)..load()),
         onGameFolderChanged: _setGameFolderOf,
+        onGamesChanged: _gamesChanged,
         hiddenTags: blacklistedTagsString,
         playerEnabled: _playerEnabled,
         onPlayerEnabledChanged: _setPlayerEnabled,
@@ -1483,7 +1628,7 @@ class _MainLauncherScreenState extends State<MainLauncherScreen> {
   Future<List<MusicSource>> _musicSources() async {
     final out = <MusicSource>[];
     final missing = <String, List<String>>{};
-    for (final g in Games.all) {
+    for (final g in Games.enabled) {
       try {
         final folder = await _folderOf(g);
         final launch = await _launchOf(g);
@@ -1619,7 +1764,7 @@ class _MainLauncherScreenState extends State<MainLauncherScreen> {
     final out = <ProgressCandidate>[];
     for (final group in manifestGroups.values) {
       for (final m in group) {
-        final mod = m.forGame(_game.id);
+        final mod = m.forGame(_game.id, orBase: _game.addonBase);
         if (mod == null) continue;
         List<String>? chosen;
         var inQueue = false;
@@ -2172,7 +2317,7 @@ class _MainLauncherScreenState extends State<MainLauncherScreen> {
     final out = <String, List<String>>{};
     for (final group in manifestGroups.values) {
       for (final m in group) {
-        final mod = m.forGame(g.id);
+        final mod = m.forGame(g.id, orBase: g.addonBase);
         if (mod == null) continue;
         // Скачан, если есть хоть один его файл — с тем же именем и размером:
         // в папке версии или где-то в папке игры. Файл с тем же именем, но
@@ -3329,7 +3474,7 @@ class _MainLauncherScreenState extends State<MainLauncherScreen> {
     final fresh = <String>[];
     for (final group in manifestGroups.values) {
       for (final m in group) {
-        final mod = m.forGame(_game.id);
+        final mod = m.forGame(_game.id, orBase: _game.addonBase);
         final files = mod == null ? null : present[mod.key];
         if (mod == null || files == null) continue;
         final u = AddonUpdates.update(mod, files);
@@ -5369,7 +5514,7 @@ class _MainLauncherScreenState extends State<MainLauncherScreen> {
   Future<String> _defaultSkinColor() async {
     final o = _launch.options;
     final skin = o.cvar('skin').trim().toLowerCase();
-    if (!o.defaultColor || skin.isEmpty || _game.id == 'drrr') return '';
+    if (!o.defaultColor || skin.isEmpty || _game.engine == 'drrr') return '';
     try {
       final chars = await _characters();
       return chars.where((c) => c.name == skin).firstOrNull?.prefColor ?? '';
@@ -5383,7 +5528,7 @@ class _MainLauncherScreenState extends State<MainLauncherScreen> {
   String _defaultSkinColorNow() {
     final o = _launch.options;
     final skin = o.cvar('skin').trim().toLowerCase();
-    if (!o.defaultColor || skin.isEmpty || _game.id == 'drrr') return '';
+    if (!o.defaultColor || skin.isEmpty || _game.engine == 'drrr') return '';
     // Персонаж может появиться с аддоном очереди — ключ меняется с очередью.
     final key = '${_game.id}|$skin|${Object.hashAll(_activeQueue)}';
     final known = _skinColorShown[key];

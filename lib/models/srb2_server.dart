@@ -195,6 +195,27 @@ class NetProtocol {
   /// В записи списка аддонов есть байт "это папка" (только SRB2 2.2.x).
   final bool fileEntryHasFolder;
 
+  /// Контрольная сумма файла в записи: 16 байт MD5; у BlanKart — 8 байт
+  /// (64-битный хеш, с MD5 репозиториев не сравнить).
+  final int fileHashBytes;
+
+  /// Байты после контрольной суммы в записи файла (BlanKart: compatmode).
+  final int fileEntryExtra;
+
+  /// Можно ли загрузить аддоны сервера заранее (`-file` в порядке сервера).
+  /// BlanKart при подключении сверяет и compatmode каждого файла, а с -file
+  /// игра определяет его сама — может не совпасть с сервером («You have the
+  /// wrong addons loaded»). Тогда игра грузит их сама, как велит сервер.
+  final bool preloadFiles;
+
+  /// plrinfo: размер записи игрока и смещения полей; скин — 1 байт или 2.
+  final int playerInfoSize;
+  final int offPlayerTeam;
+  final int offPlayerSkin;
+  final bool playerSkinWide;
+  final int offPlayerScore;
+  final int offPlayerTime;
+
   /// PT_REQUESTFILE содержит имя файла после номера (Ring Racers, SRB2Kart).
   final bool requestFileWithName;
 
@@ -251,6 +272,15 @@ class NetProtocol {
     required this.ptTellFilesNeeded,
     required this.ptMoreFilesNeeded,
     required this.fileEntryHasFolder,
+    this.fileHashBytes = 16,
+    this.fileEntryExtra = 0,
+    this.preloadFiles = true,
+    this.playerInfoSize = 36,
+    this.offPlayerTeam = 27,
+    this.offPlayerSkin = 28,
+    this.playerSkinWide = false,
+    this.offPlayerScore = 30,
+    this.offPlayerTime = 34,
     required this.requestFileWithName,
     this.legacyFileTransfer = false,
     this.gametypeNames,
@@ -475,6 +505,200 @@ class NetProtocol {
     offAvgPowerLevel: null,
     offFileNeeded: 382,
   );
+
+  /// BlanKart (codeberg.org/NepDisk/blankart, devtest-07): форк SRB2Kart с
+  /// сетевым кодом как у Ring Racers. serverinfo — как у Ring Racers, но
+  /// packetversion 2 и вместо mapmd5[16] — maphash (8 байт), поэтому всё
+  /// после него на 8 байт раньше; plrinfo без адреса, скин — UINT16 (33
+  /// байта); у файла — 64-битный хеш и байт compatmode. Версия «2.0»
+  /// (VERSION 2, SUBVERSION 0), приложение — SRB2Kart.
+  static const blankart = NetProtocol._(
+    application: 'SRB2Kart',
+    packetVersion: 2,
+    version: 2,
+    subversion: 0,
+    formatVersion: _rrVersion,
+    ptClientQuit: 11,
+    ptAskInfo: 12,
+    ptServerInfo: 13,
+    ptPlayerInfo: 14,
+    ptRequestFile: 15,
+    ptFileFragment: 28,
+    ptFileAck: 29,
+    ptFileReceived: 30,
+    ptTellFilesNeeded: 35,
+    ptMoreFilesNeeded: 36,
+    fileEntryHasFolder: false,
+    fileHashBytes: 8,
+    fileEntryExtra: 1,
+    preloadFiles: false,
+    playerInfoSize: 33,
+    offPlayerTeam: 23,
+    offPlayerSkin: 24,
+    playerSkinWide: true,
+    offPlayerScore: 27,
+    offPlayerTime: 31,
+    requestFileWithName: true,
+    baseSkins: ['Sonic', 'Tails', 'Knuckles', 'Eggman', 'Metal Sonic'],
+    // Как в SRB2: WILLSEND_YES 0, WILLSEND_NO 1, WILLSEND_TOOLARGE 2 (d_netfil.c).
+    willSend: _srb2WillSend,
+    offApplication: 2,
+    offVersion: 18,
+    offPlayers: 24,
+    offRefuseReason: 26,
+    offGametype: 27,
+    offModified: 51,
+    offFlags: 53,
+    offFileCount: 54,
+    offLevelTime: 59,
+    offServerName: 63,
+    offMapName: null,
+    offMapTitle: 95,
+    offActNum: 136,
+    offIsZone: 137,
+    offHttpSource: 138,
+    offAvgPowerLevel: 394,
+    offFileNeeded: 396,
+  );
+
+  /// Протокол по имени (для описания своей игры в JSON); null — неизвестен.
+  static NetProtocol? byName(String name) => switch (name.trim().toLowerCase()) {
+        'srb2' => srb2,
+        'legacy' || 'srb2legacy' => legacy,
+        'srb2kart' || 'kart' => srb2Kart,
+        'ringracers' || 'drrr' => ringRacers,
+        'blankart' || 'srb2blankart' => blankart,
+        _ => null,
+      };
+
+  /// Протокол из описания своей игры: имя встроенного (`"blankart"`) или
+  /// объект — встроенный протокол `base` и отличия от него (см.
+  /// docs/custom-games.md). Ошибка в описании — [FormatException].
+  static NetProtocol fromJson(Object? v) {
+    if (v is String) {
+      return byName(v) ?? (throw FormatException('unknown protocol "$v"'));
+    }
+    if (v is! Map) throw const FormatException('"protocol" must be a name or an object');
+    final j = Map<String, dynamic>.from(v);
+    final baseName = j['base'];
+    if (baseName is! String) throw const FormatException('"protocol" needs "base" (srb2, legacy, srb2kart, ringracers, blankart)');
+    final b = byName(baseName) ?? (throw FormatException('unknown protocol base "$baseName"'));
+
+    Map<String, dynamic> group(String k) {
+      final g = j[k];
+      if (g == null) return const {};
+      if (g is! Map) throw FormatException('protocol "$k" must be an object');
+      return Map<String, dynamic>.from(g);
+    }
+
+    int number(Map<String, dynamic> m, String k, int fallback, String where) {
+      if (!m.containsKey(k)) return fallback;
+      final x = m[k];
+      if (x is int && x >= -1 && x <= 0xFFFF) return x;
+      throw FormatException('protocol $where"$k" must be a number (got "$x")');
+    }
+
+    // Смещение, которого может не быть: null в JSON — поля нет.
+    int? optional(Map<String, dynamic> m, String k, int? fallback, String where) {
+      if (!m.containsKey(k)) return fallback;
+      if (m[k] == null) return null;
+      return number(m, k, 0, where);
+    }
+
+    bool flag(String k, bool fallback) {
+      if (!j.containsKey(k)) return fallback;
+      if (j[k] is bool) return j[k] as bool;
+      throw FormatException('protocol "$k" must be true or false');
+    }
+
+    int top(String k, int fallback) => number(j, k, fallback, '');
+    final pt = group('packets');
+    int packet(String k, int fallback) => number(pt, k, fallback, 'packets.');
+    final pl = group('player_info');
+    int player(String k, int fallback) => number(pl, k, fallback, 'player_info.');
+    final si = group('server_info');
+    int info(String k, int fallback) => number(si, k, fallback, 'server_info.');
+    int? infoOpt(String k, int? fallback) => optional(si, k, fallback, 'server_info.');
+
+    Map<int, String>? gametypes = b.gametypeNames;
+    if (j.containsKey('gametype_names')) {
+      final g = j['gametype_names'];
+      if (g == null) {
+        gametypes = null;
+      } else if (g is Map) {
+        gametypes = {
+          for (final e in g.entries)
+            (int.tryParse('${e.key}') ?? (throw FormatException('protocol "gametype_names": "${e.key}" is not a number'))):
+                '${e.value}',
+        };
+      } else {
+        throw const FormatException('protocol "gametype_names" must be an object');
+      }
+    }
+    final skins = j['base_skins'];
+    if (skins != null && skins is! List) throw const FormatException('protocol "base_skins" must be a list');
+
+    return NetProtocol._(
+      application: j['application'] is String ? j['application'] as String : b.application,
+      packetVersion: top('packet_version', b.packetVersion),
+      version: top('version', b.version),
+      subversion: top('subversion', b.subversion),
+      hasPacketVersionPrefix: flag('has_packet_version_prefix', b.hasPacketVersionPrefix),
+      formatVersion: switch (j['version_format']) {
+        null => b.formatVersion,
+        'srb2' => _srb2Version, // VERSION 202, SUBVERSION 15 → "2.2.15"
+        'major.minor' => _rrVersion, // VERSION 2, SUBVERSION 4 → "2.4"
+        final x => throw FormatException('protocol "version_format" must be "srb2" or "major.minor" (got "$x")'),
+      },
+      ptClientQuit: packet('client_quit', b.ptClientQuit),
+      ptAskInfo: packet('ask_info', b.ptAskInfo),
+      ptServerInfo: packet('server_info', b.ptServerInfo),
+      ptPlayerInfo: packet('player_info', b.ptPlayerInfo),
+      ptRequestFile: packet('request_file', b.ptRequestFile),
+      ptFileFragment: packet('file_fragment', b.ptFileFragment),
+      ptFileAck: packet('file_ack', b.ptFileAck),
+      ptFileReceived: packet('file_received', b.ptFileReceived),
+      ptTellFilesNeeded: packet('tell_files_needed', b.ptTellFilesNeeded),
+      ptMoreFilesNeeded: packet('more_files_needed', b.ptMoreFilesNeeded),
+      fileEntryHasFolder: flag('file_entry_has_folder', b.fileEntryHasFolder),
+      fileHashBytes: top('file_hash_bytes', b.fileHashBytes),
+      fileEntryExtra: top('file_entry_extra', b.fileEntryExtra),
+      preloadFiles: flag('preload_files', b.preloadFiles),
+      playerInfoSize: player('size', b.playerInfoSize),
+      offPlayerTeam: player('team', b.offPlayerTeam),
+      offPlayerSkin: player('skin', b.offPlayerSkin),
+      playerSkinWide: pl.containsKey('skin_wide') ? pl['skin_wide'] == true : b.playerSkinWide,
+      offPlayerScore: player('score', b.offPlayerScore),
+      offPlayerTime: player('time', b.offPlayerTime),
+      requestFileWithName: flag('request_file_with_name', b.requestFileWithName),
+      legacyFileTransfer: flag('legacy_file_transfer', b.legacyFileTransfer),
+      gametypeNames: gametypes,
+      baseSkins: skins is List ? [for (final x in skins) '$x'] : b.baseSkins,
+      willSend: switch (j['will_send']) {
+        null => b.willSend,
+        'srb2' => _srb2WillSend,
+        'kart' => _kartWillSend,
+        final x => throw FormatException('protocol "will_send" must be "srb2" or "kart" (got "$x")'),
+      },
+      offApplication: info('application', b.offApplication),
+      offVersion: info('version', b.offVersion),
+      offPlayers: info('players', b.offPlayers),
+      offRefuseReason: infoOpt('refuse_reason', b.offRefuseReason),
+      offGametype: info('gametype', b.offGametype),
+      offModified: info('modified', b.offModified),
+      offFlags: info('flags', b.offFlags),
+      offFileCount: info('file_count', b.offFileCount),
+      offLevelTime: info('level_time', b.offLevelTime),
+      offServerName: info('server_name', b.offServerName),
+      offMapName: infoOpt('map_name', b.offMapName),
+      offMapTitle: info('map_title', b.offMapTitle),
+      offActNum: info('act_num', b.offActNum),
+      offIsZone: info('is_zone', b.offIsZone),
+      offHttpSource: infoOpt('http_source', b.offHttpSource),
+      offAvgPowerLevel: infoOpt('avg_power_level', b.offAvgPowerLevel),
+      offFileNeeded: info('file_needed', b.offFileNeeded),
+    );
+  }
 
   /// Пакеты, которые сервер шлёт "надёжно" (ack в заголовке), нужно
   /// подтверждать — сейчас только фрагменты файлов SRB2Kart.
@@ -753,9 +977,10 @@ class Srb2Codec {
       }
       final name = String.fromCharCodes(b, p, end);
       p = end + 1;
-      if (p + 16 > b.length) break;
-      final md5 = _hex(b, p, 16);
-      p += 16;
+      final hashLen = proto.fileHashBytes;
+      if (p + hashLen + proto.fileEntryExtra > b.length) break;
+      final md5 = _hex(b, p, hashLen);
+      p += hashLen + proto.fileEntryExtra;
       final send = proto.willSend(status >> 4);
       files.add(ServerFile(name: name, size: size, md5: md5, willSend: send, isFolder: folder));
     }
@@ -812,17 +1037,20 @@ class Srb2Codec {
     const o = Srb2Protocol.headerSize;
     final data = ByteData.sublistView(p);
     final players = <ServerPlayer>[];
+    final size = proto.playerInfoSize;
     for (var i = 0; i < Srb2Protocol.maxPlayers; i++) {
-      final s = o + i * Srb2Protocol.playerInfoSize;
-      if (s + Srb2Protocol.playerInfoSize > p.length) break;
+      final s = o + i * size;
+      if (s + size > p.length) break;
       if (p[s] == 255) continue; // пустой слот
+      final skin = proto.playerSkinWide ? data.getUint16(s + proto.offPlayerSkin, Endian.little) : p[s + proto.offPlayerSkin];
       players.add(ServerPlayer(
         num: p[s],
         name: cString(p, s + 1, 22),
-        team: p[s + 27],
-        skin: p[s + 28],
-        score: data.getUint32(s + 30, Endian.little),
-        secondsInServer: data.getUint16(s + 34, Endian.little),
+        team: p[s + proto.offPlayerTeam],
+        // 0xFFFF (нет скина) — как 255 у остальных.
+        skin: skin == 0xFFFF ? 255 : skin,
+        score: data.getUint32(s + proto.offPlayerScore, Endian.little),
+        secondsInServer: data.getUint16(s + proto.offPlayerTime, Endian.little),
         baseSkins: proto.baseSkins,
       ));
     }

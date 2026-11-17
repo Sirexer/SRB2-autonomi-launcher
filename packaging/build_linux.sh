@@ -22,10 +22,14 @@ python3 tools/build_geoip.py assets/geoip/country.bin || echo "WARNING: GeoIP da
 # The bundle is made anew (it goes into the AppImage as a whole): no files
 # left over from earlier builds.
 rm -rf build/linux/x64/release/bundle
+# Launcher version: $BUILD_VERSION, or the release tag on this commit
+# (beta-release3); the launcher compares it with the latest release.
+VERSION="${BUILD_VERSION:-$(git describe --tags --exact-match 2>/dev/null || true)}"
 NO_OPUS_OGG_LIBS=1 flutter build linux --release \
   --dart-define=BUILD_DATE="$(date -u '+%Y-%m-%d %H:%M UTC')" \
   --dart-define=BUILD_COMMIT="$(git rev-parse --short=7 HEAD)" \
-  --dart-define=BUILD_FLUTTER="$FLUTTER_HAVE"
+  --dart-define=BUILD_FLUTTER="$FLUTTER_HAVE" \
+  --dart-define=BUILD_VERSION="$VERSION"
 
 APPDIR=AppDir
 rm -rf "$APPDIR"
@@ -62,6 +66,8 @@ cp packaging/linux/srb2al.png "$APPDIR/srb2al.png"
 cp packaging/pointer.txt "$APPDIR/usr/bin/pointer.txt"
 # Attribution of the data in the launcher (DB-IP, flags).
 cp packaging/NOTICE.txt "$APPDIR/usr/bin/NOTICE.txt"
+# Custom games (BlanKart) offered on the first start.
+cp packaging/another_games.json "$APPDIR/usr/bin/another_games.json"
 
 if [ ! -x appimagetool-x86_64.AppImage ]; then
   curl -fSL --retry 5 --retry-delay 10 --retry-all-errors -o appimagetool-x86_64.AppImage \

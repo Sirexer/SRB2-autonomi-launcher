@@ -14,6 +14,7 @@ import '../models/game.dart';
 import '../services/music.dart';
 import '../services/music_player.dart';
 import 'file_actions.dart';
+import 'game_icon.dart';
 import 'music_visualizer.dart';
 import 'snack.dart';
 import 'srb2_text.dart';
@@ -760,7 +761,7 @@ class _PlayerTabState extends State<PlayerTab> {
         final game = _gameOf(t.game);
         icon = game == null
             ? Icon(_categoryIcon(MusicCategory.opened), size: 24, color: scheme.primary)
-            : Image.asset(game.iconAsset, width: 24, height: 24, filterQuality: FilterQuality.medium);
+            : GameIcon(game, size: 24);
         label = game?.name ?? tr('Opened files');
         style = const TextStyle(fontWeight: FontWeight.bold, fontSize: 15);
         background = scheme.primary.withValues(alpha: 0.16);
@@ -1143,7 +1144,7 @@ class _PlayerTabState extends State<PlayerTab> {
                         if (_gameOf(t?.game ?? '') case final game?) ...[
                           Tooltip(
                             message: game.name,
-                            child: Image.asset(game.iconAsset, width: 18, height: 18, filterQuality: FilterQuality.medium),
+                            child: GameIcon(game, size: 18),
                           ),
                           const SizedBox(width: 6),
                         ],
@@ -1475,7 +1476,7 @@ class MiniPlayer extends StatelessWidget {
                           child: Row(
                             children: [
                               if (game != null) ...[
-                                Image.asset(game.iconAsset, width: 18, height: 18, filterQuality: FilterQuality.medium),
+                                GameIcon(game, size: 18),
                                 const SizedBox(width: 8),
                               ] else ...[
                                 const Icon(Icons.music_note, size: 18),
