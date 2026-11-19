@@ -79,7 +79,10 @@ class MidiFile {
           p += l;
           if (type == 0x2F) break; // конец дорожки
         } else if (status == 0xF0 || status == 0xF7) {
-          p += vlq(); // SysEx
+          // Длину — отдельно: в `p += vlq()` бралось бы старое p, до сдвига
+          // внутри vlq, и позиция отставала бы на байт длины.
+          final l = vlq();
+          p += l; // SysEx
         } else if (status >= 0x80) {
           running = status;
           final type = status & 0xF0;

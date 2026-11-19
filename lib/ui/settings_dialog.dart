@@ -16,11 +16,15 @@ import '../services/save_guard.dart';
 import '../services/servers_store.dart';
 import 'addon_icon.dart';
 import 'appearance_pickers.dart';
+import 'blacklist_settings.dart';
 import 'file_actions.dart';
 import 'game_icon.dart';
+import '../services/hidden_addon_folders.dart';
 import 'games_settings.dart';
 import 'launch_panel.dart';
 import 'snack.dart';
+import 'theme_editor.dart';
+import '../theme/app_themes.dart';
 import 'update_dialog.dart';
 
 /// Что делать при запуске, если репозиторий по pointer указывает на новый
@@ -100,6 +104,9 @@ class SettingsDialog extends StatefulWidget {
   /// Набор игр изменился (включили/выключили, добавили/убрали свою).
   final VoidCallback onGamesChanged;
 
+  /// Скрытые папки аддонов игры изменились (список аддонов — заново).
+  final ValueChanged<GameDef> onHiddenFoldersChanged;
+
   const SettingsDialog({
     super.key,
     this.initialSection = SettingsSection.general,
@@ -137,6 +144,7 @@ class SettingsDialog extends StatefulWidget {
     required this.themeKey,
     required this.onThemeChanged,
     required this.onGamesChanged,
+    required this.onHiddenFoldersChanged,
   });
 
   /// Открывает настройки на нужном разделе.
@@ -311,7 +319,8 @@ class _SettingsDialogState extends State<SettingsDialog> {
             // Навигация по разделам.
             Container(
               width: 240,
-              color: Colors.black.withValues(alpha: 0.25),
+              // Чуть темнее фона: на тёмной теме — заметнее, на светлой — слегка.
+              color: Colors.black.withValues(alpha: Theme.of(context).brightness == Brightness.dark ? 0.25 : 0.06),
               padding: const EdgeInsets.fromLTRB(12, 20, 12, 12),
               // Свой Material: подсветка пунктов рисуется поверх подложки.
               child: Material(
@@ -470,6 +479,76 @@ class _SettingsDialogState extends State<SettingsDialog> {
 
   // --- General ---
 
+  /// Под выбором темы: новая (на основе текущей), изменить и удалить свою,
+  /// папка тем.
+  Widget _themeButtons() {
+    final current = AppThemes.byKey(_themeKey);
+    void apply(String key) {
+      setState(() => _themeKey = key);
+      widget.onThemeChanged(key);
+    }
+
+    Future<void> edit(LauncherTheme base, {bool asNew = false}) async {
+      final saved = await showThemeEditor(context, base, asNew: asNew);
+      if (saved != null && mounted) apply(saved.key);
+    }
+
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: [
+        OutlinedButton.icon(
+          icon: const Icon(Icons.add, size: 18),
+          label: Text(tr('New theme')),
+          onPressed: () => edit(current, asNew: true),
+        ),
+        if (current.editable)
+          OutlinedButton.icon(
+            icon: const Icon(Icons.edit_outlined, size: 18),
+            label: Text(tr('Edit')),
+            onPressed: () => edit(current),
+          ),
+        if (current.editable)
+          OutlinedButton.icon(
+            icon: const Icon(Icons.delete_outline, size: 18),
+            label: Text(tr('Delete')),
+            onPressed: () async {
+              final ok = await showDialog<bool>(
+                context: context,
+                builder: (context) => AlertDialog(
+                  title: Text(tr('Delete the theme "{name}"?', {'name': current.name})),
+                  actions: [
+                    TextButton(onPressed: () => Navigator.pop(context, false), child: Text(tr('Cancel'))),
+                    FilledButton(onPressed: () => Navigator.pop(context, true), child: Text(tr('Delete'))),
+                  ],
+                ),
+              );
+              if (ok != true) return;
+              await AppThemes.delete(current);
+              if (mounted) apply(AppThemes.all.any((t) => t.key == current.key) ? current.key : AppThemes.deepOrange);
+            },
+          ),
+        OutlinedButton.icon(
+          icon: const Icon(Icons.folder_open_outlined, size: 18),
+          label: Text(tr('Themes folder')),
+          onPressed: () async {
+            final dir = await AppThemes.userDir();
+            await dir.create(recursive: true);
+            if (mounted) await openFolder(context, dir.path);
+          },
+        ),
+        IconButton(
+          icon: const Icon(Icons.refresh),
+          tooltip: tr('Reload themes from the folders'),
+          onPressed: () async {
+            await AppThemes.load();
+            if (mounted) setState(() {});
+          },
+        ),
+      ],
+    );
+  }
+
   Widget _general() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -488,6 +567,8 @@ class _SettingsDialogState extends State<SettingsDialog> {
             widget.onThemeChanged(val);
           },
         ),
+        const SizedBox(height: 8),
+        _themeButtons(),
         const SizedBox(height: 16),
         _title('Autonomi'),
         _hint(tr('If addons or icons stopped loading, restart the Autonomi daemon (antd). '
@@ -688,9 +769,66 @@ class _SettingsDialogState extends State<SettingsDialog> {
           const SizedBox(height: 8),
           _hint(tr('Do not choose a folder inside C:\\Program Files: addons cannot be saved there without administrator rights.')),
         ],
+        _title(tr('Hidden folders')),
+        _hint(tr('Addons in these folders are not shown on the Addons tab (Other downloads, In the game folder). '
+            'Addons from your repositories are shown anyway.')),
+        FutureBuilder<List<String>>(
+          // Ключ — игра и счётчик: после добавления/удаления — заново.
+          key: ValueKey('${_g.id}|$_hiddenFoldersVersion'),
+          future: HiddenAddonFolders.stored(_g),
+          builder: (context, snap) {
+            final list = snap.data ?? const <String>[];
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (list.isEmpty)
+                  Text(tr('None'), style: const TextStyle(fontSize: 12, color: Colors.grey))
+                else
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: [
+                      for (final f in list)
+                        InputChip(
+                          avatar: const Icon(Icons.folder_off_outlined, size: 18),
+                          label: Text(f),
+                          deleteButtonTooltipMessage: tr('Show again'),
+                          onDeleted: () async {
+                            await HiddenAddonFolders.remove(_g, f);
+                            if (!mounted) return;
+                            setState(() => _hiddenFoldersVersion++);
+                            widget.onHiddenFoldersChanged(_g);
+                          },
+                        ),
+                    ],
+                  ),
+                const SizedBox(height: 8),
+                OutlinedButton.icon(
+                  icon: const Icon(Icons.create_new_folder_outlined, size: 18),
+                  label: Text(tr('Hide a folder...')),
+                  onPressed: () async {
+                    AppLog.action('open the getDirectoryPath dialog (settings_dialog.dart, hidden folders)');
+                    final root = _gameFolder;
+                    final dir = await getDirectoryPath(
+                      initialDirectory: root != null && Directory(root).existsSync() ? root : null,
+                    );
+                    if (dir == null) return;
+                    await HiddenAddonFolders.add(_g, root, dir);
+                    if (!mounted) return;
+                    setState(() => _hiddenFoldersVersion++);
+                    widget.onHiddenFoldersChanged(_g);
+                  },
+                ),
+              ],
+            );
+          },
+        ),
       ],
     );
   }
+
+  /// Меняется — список скрытых папок перечитывается.
+  int _hiddenFoldersVersion = 0;
 
   // --- Addons ---
 
@@ -1138,6 +1276,10 @@ class _SettingsDialogState extends State<SettingsDialog> {
               }
             },
           ),
+          _title(tr('Blacklist')),
+          _hint(tr('Servers that are never shown in the list (for all games): by address or by a word in the name. '
+              'A server is added from its page (the button next to the star). Your servers are always shown.')),
+          const BlacklistSettings(),
           _title(tr('Local server list')),
           _hint(tr('Servers seen on the master server are saved locally, so they stay in the list (marked with a clock) when the master server is down or the server leaves it. A server is removed when it has not answered for the chosen time.')),
           Row(

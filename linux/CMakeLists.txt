@@ -101,6 +101,10 @@ install(FILES "${FLUTTER_ICU_DATA_FILE}" DESTINATION "${INSTALL_BUNDLE_DATA_DIR}
 install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/../lang"
   DESTINATION "${CMAKE_INSTALL_PREFIX}" COMPONENT Runtime)
 
+# Color themes (themes/<name>.json), next to the executable.
+install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/../themes"
+  DESTINATION "${CMAKE_INSTALL_PREFIX}" COMPONENT Runtime)
+
 # Window icon, loaded by runner/my_application.cc from data/ next to the binary.
 install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/../packaging/linux/srb2al.png"
   DESTINATION "${INSTALL_BUNDLE_DATA_DIR}" COMPONENT Runtime)

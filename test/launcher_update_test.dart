@@ -40,8 +40,9 @@ void main() {
     // По тегу сборки.
     expect(LauncherUpdate.newerFor(list, version: 'beta-release3', built: null), isNull);
     expect(LauncherUpdate.newerFor(list, version: 'beta-release2', built: null)?.tag, 'beta-release3');
-    // Сборка без тега: по времени сборки (сам релиз публикуется чуть позже своей сборки).
-    expect(LauncherUpdate.newerFor(list, version: '', built: DateTime.utc(2026, 11, 20, 11, 40)), isNull);
+    // Сборка без тега: по времени сборки — релиз, опубликованный хоть немного позже, новее.
+    expect(LauncherUpdate.newerFor(list, version: '', built: DateTime.utc(2026, 11, 20, 12, 30)), isNull);
+    expect(LauncherUpdate.newerFor(list, version: '', built: DateTime.utc(2026, 11, 20, 11, 50))?.tag, 'beta-release3');
     expect(LauncherUpdate.newerFor(list, version: '', built: DateTime.utc(2026, 11, 12))?.tag, 'beta-release3');
     // Локальная сборка: не при запуске, по кнопке — да.
     expect(LauncherUpdate.newerFor(list, version: '', built: null), isNull);

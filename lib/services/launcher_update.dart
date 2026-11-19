@@ -250,11 +250,11 @@ class LauncherUpdate {
       // Нашего тега нет среди релизов (удалён) — по времени сборки.
     }
     if (built == null) return anyBuild ? latest : null;
-    // Релиз публикуется после сборки своих файлов: запас, чтобы сборка
-    // самого этого релиза не считала его новее себя.
+    // Сборка без версии (локальная, не по тегу): новее — опубликованный
+    // позже её сборки. У сборок релизов версия есть, их это не касается.
     final published = latest.published;
     if (published == null) return null;
-    return published.isAfter(built.add(const Duration(hours: 3))) ? latest : null;
+    return published.isAfter(built) ? latest : null;
   }
 
   /// Можно ли установить обновление само; иначе причина (тогда — страница релиза).

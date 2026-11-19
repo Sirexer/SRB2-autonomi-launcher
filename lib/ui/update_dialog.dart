@@ -62,7 +62,13 @@ Future<void> checkLauncherUpdateNow(BuildContext context) async {
   if (!context.mounted) return;
   final newer = LauncherUpdate.newerOf(list, anyBuild: true);
   if (newer == null) {
-    showSnack(context, SnackBar(content: Text(tr('You have the latest version ({version}).', {'version': currentLauncherVersion()}))));
+    showSnack(
+        context,
+        SnackBar(
+            content: Text([
+          tr('You have the latest version ({version}).', {'version': currentLauncherVersion()}),
+          if (list.isNotEmpty) tr('Latest release: {version}.', {'version': list.first.name}),
+        ].join(' '))));
     return;
   }
   await showDialog<void>(context: context, barrierDismissible: false, builder: (_) => UpdateDialog(release: newer));

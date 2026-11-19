@@ -1,5 +1,5 @@
 SRB2 Autonomi Launcher
-Universal launcher for SRB2—its main feature is downloading add-ons using
+Versatile launcher for SRB2—its main feature is downloading add-ons using
 Autonomi. Free software under the GNU General Public License, version 2.
 
 Data included in the launcher

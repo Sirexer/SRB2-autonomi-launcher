@@ -1,0 +1,115 @@
+# Settings and everything else
+
+**English** | [Русский](settings.ru.md)
+
+## Settings window
+
+All settings are in the **Settings** window (the gear at the top). The shared
+sections come first: **General** (language, theme, Autonomi, launcher build,
+updates, data), **Games** (which games are in the switcher, custom games),
+**Addons** (hidden tags, tags on the add-on page, repository updates, list
+sections), **Experimental** (player, progress, save protection). Below, under
+the **game** picker, are the game's sections: **Game folder**, **Launch**
+(executables) and **Servers**. The game can be picked right in the window —
+it does not change the launcher's current game. The settings buttons on the
+tabs open the matching section.
+
+## First start
+
+A wizard is shown once:
+
+1. **language and theme** — your system's language is preselected if there is
+   a translation;
+2. **repository** from `pointer.txt` — download and add it or not;
+3. **games** — which to show and which custom games to add from
+   `another_games.json`; then, optionally, the folder and executable of each
+   game (found ones are filled in);
+4. **experimental features** — player, progress, save protection.
+
+## Game folder
+
+The folder with the game's files (`srb2.pk3`, `bios.pk3`…; usually found by
+itself on Linux). The game is started with it as the working folder, so
+`config.cfg`, saves and the downloads folder come from there even if the
+executables are elsewhere. On Windows do not pick a folder inside
+`C:\Program Files`: add-ons cannot be saved there without administrator
+rights.
+
+**Hidden folders** (same place, per game): add-ons in these folders are not
+shown in Other downloads and In the game folder; repository add-ons are shown
+anyway. A folder inside the game folder is stored relative to it.
+
+## Language and theme
+
+Languages: English, Russian, Ukrainian, German, Spanish, Portuguese
+(Brazilian). Until you choose one, the system's language is used. How to add
+a language: [translations.md](../translations.md).
+
+Themes: four built-in and six in the `themes` folder (Ocean, Ruby, Gold,
+Steel, Midnight, the light Daylight); make your own in the editor. Details:
+[themes.md](../themes.md).
+
+## Notifications
+
+The bell button in the title bar (order: notifications, downloads, settings);
+the number is how many are new.
+
+- **Repository updated** — new add-ons and add-ons with new versions.
+- **Add-on update** — a downloaded add-on of the current game has a newer
+  version. Each version is reported once (remembered after a restart too).
+- **Save protection** — a save was restored, or is damaged with no copy.
+
+## Launcher updates
+
+New versions come from the
+[GitHub releases](https://github.com/Sirexer/SRB2-autonomi-launcher/releases).
+On start the launcher checks for a newer version and shows a window with the
+changelog and **Update now**, **Later** (asks again next start) and **Skip
+this update**. Settings → General has "Check for updates when the launcher
+starts", Check for updates (shows a skipped version too) and the current
+version.
+
+Update now downloads the file for your system, checks it, replaces the
+launcher and restarts it; a running game keeps running. On Windows
+`user_data` (portable mode), your own `pointer.txt` and your own language
+files are not touched. On Linux the AppImage is replaced; a launcher not
+started from an AppImage, or without write access to its folder, opens the
+download page instead.
+
+## One launcher at a time
+
+A second start brings the open launcher to the front and quits (two launchers
+would get in each other's way). `--new-instance` opens another one anyway.
+
+## Where the data is
+
+- Settings, caches, themes, save copies and `antd`:
+  - Windows: `%APPDATA%\SRB2 Autonomi Launcher\`
+  - Linux: `~/.local/share/com.srb2.autonomi_launcher/`
+  - in **portable mode** — `user_data` next to the launcher: put an empty file
+    named `portable` (or `portable.txt`) next to `srb2al.exe` (or the
+    `.AppImage`).
+
+  Where it is now: Settings → General → Launcher data.
+- The log is `logs/launcher.log` (the previous run: `launcher.old.log`): handy
+  if something went wrong.
+- Caches (`addon_contents_cache.json`, `music/scan_cache.json`,
+  `music_render/`) can be deleted — they are rebuilt.
+
+## Autonomi (antd)
+
+Add-ons are downloaded through the Autonomi daemon `antd`
+([ant-sdk](https://github.com/WithAutonomi/ant-sdk)). It ships with the
+launcher and starts by itself; nothing to download. If the daemon stops
+answering, the launcher restarts it (at most once a minute); by hand:
+Settings → General → Restart Autonomi. If you run `antd` yourself on
+`127.0.0.1:8082` and it answers, the launcher uses it.
+
+## Saving power
+
+- Unchanged files are not analyzed again: add-ons, music and rendered tracks
+  come from the cache.
+- While the window is minimized, background work waits.
+- Animated covers (GIF): all, only the selected one, or still — Settings →
+  Addons → Animated icons.
+- Groups in Addons and Music start collapsed.

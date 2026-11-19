@@ -180,7 +180,9 @@ class CharacterScanner {
           final face = a.find('LIVSONIC');
           if (face == null) continue;
           final portrait = portraits ? _findIn(archives, picNames['sonic'] ?? 'CHRSONIC', prefer: a) : null;
-          out.add(_character('sonic', 'Sonic', path, a, face, portrait, paletteOnce,
+          final icon = (a, face, false);
+          out.add(_character('sonic', 'Sonic', path, icon,
+              portrait == null ? (portraits ? icon : null) : (portrait.$1, portrait.$2, false), paletteOnce,
               startColor, 'Blue', findColor(all, 'Blue'), descriptions['sonic'] ?? ''));
           break;
         }
@@ -292,21 +294,32 @@ class CharacterScanner {
           if (_xtraFrame(sprites, 'B') case final e?) portrait = (a, e);
         }
       }
-      out.add(_character(name, realname, path, a, iconLump, portrait, palette, start, pref, ramp,
-          descriptions[name] ?? ''));
+      // Нет одной из картинок — берётся другая; нет обеих — спрайт стоящего
+      // персонажа STNDA2 (у STNDA8 — отражённый: так он смотрит как A2).
+      (AddonArchive, ArchiveEntry, bool)? icon = iconLump == null ? null : (a, iconLump, false);
+      (AddonArchive, ArchiveEntry, bool)? face = portrait == null ? null : (portrait.$1, portrait.$2, false);
+      icon ??= face;
+      if (portraits) face ??= icon;
+      if (icon == null) {
+        if (_standFrame(sprites) case (final e, final flip)) {
+          icon = (a, e, flip);
+          if (portraits) face = icon;
+        }
+      }
+      out.add(_character(name, realname, path, icon, face, palette, start, pref, ramp, descriptions[name] ?? ''));
     }
     return out;
   }
 
   /// Персонаж: иконка [iconLump] в цвете [ramp] (перекрашивается и потом),
   /// портрет [portraitLump] как есть.
-  static CharacterInfo _character(String name, String realname, String path, AddonArchive a, ArchiveEntry? iconLump,
-      (AddonArchive, ArchiveEntry)? portraitLump, Uint8List? Function() palette, int start, String pref,
-      List<int>? ramp, String description) {
+  static CharacterInfo _character(String name, String realname, String path,
+      (AddonArchive, ArchiveEntry, bool)? iconLump, (AddonArchive, ArchiveEntry, bool)? portraitLump,
+      Uint8List? Function() palette, int start, String pref, List<int>? ramp, String description) {
     Uint8List? portrait;
     if (portraitLump != null) {
       try {
-        portrait = iconFromLump(portraitLump.$1.read(portraitLump.$2), palette);
+        portrait = iconFromLump(portraitLump.$1.read(portraitLump.$2), palette, flip: portraitLump.$3);
       } catch (_) {
         portrait = null;
       }
@@ -316,11 +329,12 @@ class CharacterScanner {
     Uint8List? pal;
     if (iconLump != null) {
       try {
-        final data = a.read(iconLump);
+        final data = iconLump.$1.read(iconLump.$2);
         if (_isPng(data)) {
-          icon = data; // PNG не перекрашиваем
+          icon = data; // PNG не перекрашиваем (и не отражаем)
         } else {
           indexed = MapScanner.decodePatchIndexed(data);
+          if (indexed != null && iconLump.$3) indexed = flipped(indexed);
           pal = palette();
           if (indexed != null && pal != null) {
             icon = render(indexed.$1, indexed.$2, indexed.$3, indexed.$4, pal, start, ramp);
@@ -420,12 +434,52 @@ class CharacterScanner {
   }
 
   /// Иконка из lump без перекраски (для совместимости).
-  static Uint8List? iconFromLump(Uint8List data, Uint8List? Function() palette) {
+  static Uint8List? iconFromLump(Uint8List data, Uint8List? Function() palette, {bool flip = false}) {
     if (_isPng(data)) return data;
     final pal = palette();
-    final indexed = MapScanner.decodePatchIndexed(data);
+    var indexed = MapScanner.decodePatchIndexed(data);
     if (pal == null || indexed == null) return null;
+    if (flip) indexed = flipped(indexed);
     return render(indexed.$1, indexed.$2, indexed.$3, indexed.$4, pal, 0, null);
+  }
+
+  /// Картинка в индексах, отражённая по горизонтали.
+  static (int, int, Uint8List, Uint8List) flipped((int, int, Uint8List, Uint8List) img) {
+    final (w, h, pixels, mask) = img;
+    final p = Uint8List(pixels.length), m = Uint8List(mask.length);
+    for (var y = 0; y < h; y++) {
+      for (var x = 0; x < w; x++) {
+        p[y * w + x] = pixels[y * w + (w - 1 - x)];
+        m[y * w + x] = mask[y * w + (w - 1 - x)];
+      }
+    }
+    return (w, h, p, m);
+  }
+
+  /// Спрайт стоящего персонажа под углом 2 (STND, кадр A) и нужно ли его
+  /// отражать. По порядку: `STNDA2`/`STNDA2A8` как есть, `STNDA8A2` (A2 —
+  /// отражение), `STNDA0` (один на все углы), `STNDA8` — отражённый,
+  /// `STNDA1` — анфас. null — спрайта нет.
+  static (ArchiveEntry, bool)? _standFrame(List<ArchiveEntry> sprites) {
+    (ArchiveEntry, bool)? best;
+    var rank = 99;
+    for (final e in sprites) {
+      final n = e.name;
+      if (!n.startsWith('STND') || n.length < 6 || n[4] != 'A') continue;
+      final (r, flip) = switch (n.substring(5)) {
+        final rest when rest.startsWith('2') => (0, false),
+        final rest when rest.length >= 3 && rest[1] == 'A' && rest[2] == '2' => (1, true),
+        final rest when rest.startsWith('0') => (2, false),
+        final rest when rest.startsWith('8') => (3, true),
+        final rest when rest.startsWith('1') => (4, false),
+        _ => (99, false),
+      };
+      if (r < rank) {
+        rank = r;
+        best = (e, flip);
+      }
+    }
+    return best;
   }
 
   /// Свои цвета аддона: SOC-блоки `SKINCOLOR ...` и Lua `skincolors[...] = {...}`.

@@ -97,6 +97,46 @@ void main() {
     expect(c.icon, fakePng);
   });
 
+  test('no XTRAC0 icon: the select picture is used, and the other way round', () async {
+    final path = p.join(dir.path, 'CL_Half.pk3');
+    await File(path).writeAsBytes(buildZip([
+      ('Skins/A/S_SKIN', ascii.encode('name = onlyportrait\n')),
+      ('Skins/A/XTRAB0.png', [0x89, 0x50, 0x4E, 0x47, 42]),
+      ('Skins/B/S_SKIN', ascii.encode('name = onlyicon\n')),
+      ('Skins/B/XTRAC0.png', fakePng),
+    ]));
+    final chars = CharacterScanner.scanAll([path], const []);
+    expect(chars[0].icon!.last, 42);
+    expect(chars[1].portrait, fakePng);
+  });
+
+  test('neither: the standing sprite STNDA2; STNDA8 is mirrored to look the same', () async {
+    // patch2x2, отражённый по горизонтали (столбцы местами).
+    final mirrored = Uint8List.fromList([
+      2, 0, 2, 0, 0, 0, 0, 0,
+      16, 0, 0, 0, 22, 0, 0, 0,
+      0, 1, 0, 3, 0, 0xFF,
+      0, 2, 0, 1, 2, 0, 0xFF,
+    ]);
+    Future<CharacterInfo> scan(String file, String lump, Uint8List data) async {
+      final path = p.join(dir.path, file);
+      await File(path).writeAsBytes(buildWad([
+        ('PLAYPAL', palette()),
+        ('S_SKIN', ascii.encode('name = stand\n')),
+        ('STNDA1', [0]),
+        (lump, data),
+        ('S_END', []),
+      ]));
+      return CharacterScanner.scanAll([path], const []).single;
+    }
+
+    final a2 = await scan('a2.wad', 'STNDA2A8', patch2x2());
+    final a8 = await scan('a8.wad', 'STNDA8', mirrored);
+    expect(a2.icon, isNotNull);
+    expect(a8.icon, a2.icon);
+    expect(a8.portrait, a2.portrait);
+  });
+
   test('custom colors from SOC and Lua, lookup by name', () {
     final soc = CharacterScanner.parseSocColors('FREESLOT\nSKINCOLOR_FIRECOPPER\n\n'
         'SKINCOLOR SKINCOLOR_FIRECOPPER\nNAME = Firecopper\n'
@@ -172,7 +212,7 @@ void main() {
     final c = CharacterScanner.scanAll([path], const []).single;
     expect(c.portrait, isNotNull);
     expect(c.description, '^2Green^0.');
-    // Без PicName и charsel портрета нет — показывается иконка (face).
+    // Без PicName и charsel портретом становится иконка (face).
     final plain = p.join(dir.path, 'Plain.wad');
     await File(plain).writeAsBytes(buildWad([
       ('PLAYPAL', palette()),
@@ -181,7 +221,8 @@ void main() {
       ('S_END', []),
     ]));
     final d = CharacterScanner.scanAll([plain], const [], baseDescriptions: CharacterScanner.vanillaDescriptions).single;
-    expect((d.portrait, d.icon != null, d.description), (null, true, ''));
+    expect((d.icon != null, d.description), (true, ''));
+    expect(d.portrait, d.icon);
     final sonic = CharacterScanner.scanAll([plain], const [], baseDescriptions: CharacterScanner.vanillaDescriptions);
     expect(sonic.single.name, 'plain');
   });

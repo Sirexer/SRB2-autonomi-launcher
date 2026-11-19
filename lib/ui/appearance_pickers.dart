@@ -46,6 +46,37 @@ class LanguageDropdown extends StatelessWidget {
   }
 }
 
+/// Образец темы: фон с кружком акцента.
+class ThemeSwatch extends StatelessWidget {
+  final LauncherTheme theme;
+  final double size;
+  const ThemeSwatch(this.theme, {super.key, this.size = 22});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = theme.colorScheme;
+    final bg = theme.background ?? (theme.dark ? const Color(0xFF141218) : scheme.surface);
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        color: bg,
+        shape: BoxShape.circle,
+        border: Border.all(color: Colors.grey.withValues(alpha: 0.6)),
+      ),
+      alignment: Alignment.center,
+      child: Container(
+        width: size * 0.55,
+        height: size * 0.55,
+        decoration: BoxDecoration(color: scheme.primary, shape: BoxShape.circle),
+      ),
+    );
+  }
+}
+
+/// Название темы: у встроенных — переведённое.
+String themeName(LauncherTheme t) => t.path == null ? tr(t.name) : t.name;
+
 /// Выбор цветовой темы.
 class ThemeDropdown extends StatelessWidget {
   final String value;
@@ -53,15 +84,33 @@ class ThemeDropdown extends StatelessWidget {
   const ThemeDropdown({super.key, required this.value, required this.onChanged});
 
   @override
-  Widget build(BuildContext context) => DropdownButtonFormField<String>(
-        initialValue: value,
-        decoration: const InputDecoration(border: OutlineInputBorder(), isDense: true),
-        items: [
-          for (final theme in AppThemes.availableThemes)
-            DropdownMenuItem<String>(value: theme['key'] as String, child: Text(tr(theme['name'] as String))),
-        ],
-        onChanged: (v) {
-          if (v != null) onChanged(v);
-        },
-      );
+  Widget build(BuildContext context) {
+    final themes = AppThemes.all;
+    return DropdownButtonFormField<String>(
+      // Новые/удалённые темы — поле заново.
+      key: ValueKey('${themes.length}:$value'),
+      initialValue: themes.any((t) => t.key == value) ? value : themes.first.key,
+      decoration: const InputDecoration(border: OutlineInputBorder(), isDense: true),
+      items: [
+        for (final t in themes)
+          DropdownMenuItem<String>(
+            value: t.key,
+            child: Row(
+              children: [
+                ThemeSwatch(t),
+                const SizedBox(width: 10),
+                Flexible(child: Text(themeName(t), overflow: TextOverflow.ellipsis)),
+                if (t.editable) ...[
+                  const SizedBox(width: 8),
+                  Text(tr('(yours)'), style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                ],
+              ],
+            ),
+          ),
+      ],
+      onChanged: (v) {
+        if (v != null) onChanged(v);
+      },
+    );
+  }
 }

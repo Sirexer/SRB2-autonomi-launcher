@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
 
+import '../services/midi_out.dart';
 import '../services/app_log.dart';
 import '../i18n.dart';
 import '../models/game.dart';
@@ -437,12 +438,49 @@ class _PlayerTabState extends State<PlayerTab> {
 
   /// Список SoundFont для быстрого переключения: встроенный синтезатор,
   /// добавленные файлы (с кнопкой «убрать») и «Добавить…».
+  /// MIDI-устройства системы (обновляются при открытии меню).
+  List<MidiDevice> _midiDevices = const [];
+
   Widget _soundFontMenu() {
     final sf2 = player.sf2Path;
+    final device = player.midiDevice;
     final accent = Theme.of(context).colorScheme.primary;
     Widget check(bool on) => Icon(on ? Icons.check : null, size: 18, color: accent);
+    Widget header(String text) => Padding(
+          padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+          child: Text(text, style: const TextStyle(fontSize: 12, color: Colors.grey)),
+        );
+    final deviceName = device == null
+        ? null
+        : device == 'win:*'
+            ? tr('Windows default (MIDI Mapper)')
+            : (_midiDevices.where((d) => d.id == device).firstOrNull?.name ?? device.substring(device.indexOf(':') + 1));
     return MenuAnchor(
       menuChildren: [
+        // Куда идёт MIDI: свой синтезатор (SoundFont ниже) или устройство системы.
+        header(tr('MIDI output')),
+        MenuItemButton(
+          leadingIcon: check(device == null),
+          onPressed: () => player.setMidiDevice(null),
+          child: Text(tr('Launcher synthesizer (SoundFont)')),
+        ),
+        for (final d in _midiDevices)
+          MenuItemButton(
+            leadingIcon: check(device == d.id),
+            onPressed: () => player.setMidiDevice(d.id),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 320),
+              child: Text(d.id == 'win:*' ? tr('Windows default (MIDI Mapper)') : d.name,
+                  overflow: TextOverflow.ellipsis),
+            ),
+          ),
+        if (_midiDevices.isEmpty)
+          MenuItemButton(
+            leadingIcon: check(false),
+            child: Text(tr('No MIDI devices found'), style: const TextStyle(color: Colors.grey)),
+          ),
+        const Divider(height: 1),
+        header('SoundFont'),
         MenuItemButton(
           leadingIcon: check(sf2 == null),
           onPressed: () => player.setSf2(null),
@@ -477,8 +515,10 @@ class _PlayerTabState extends State<PlayerTab> {
         ),
       ],
       builder: (context, controller, _) => Tooltip(
-        message:
-            sf2 ?? tr('MIDI is played by a simple built-in synthesizer. Choose a SoundFont (.sf2) for real instruments.'),
+        message: deviceName != null
+            ? tr('MIDI is played by the MIDI device of the system: {device}.', {'device': deviceName})
+            : sf2 ??
+                tr('MIDI is played by a simple built-in synthesizer. Choose a SoundFont (.sf2) for real instruments.'),
         child: OutlinedButton.icon(
           icon: const Icon(Icons.piano, size: 18),
           label: Row(
@@ -487,14 +527,26 @@ class _PlayerTabState extends State<PlayerTab> {
               ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 220),
                 child: Text(
-                  sf2 == null ? tr('SoundFont: built-in') : 'SoundFont: ${p.basename(sf2)}',
+                  deviceName != null
+                      ? 'MIDI: $deviceName'
+                      : sf2 == null
+                          ? tr('SoundFont: built-in')
+                          : 'SoundFont: ${p.basename(sf2)}',
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
               const Icon(Icons.arrow_drop_down, size: 18),
             ],
           ),
-          onPressed: () => controller.isOpen ? controller.close() : controller.open(),
+          onPressed: () {
+            if (controller.isOpen) {
+              controller.close();
+              return;
+            }
+            // Устройства — заново при каждом открытии (синтезатор могли запустить).
+            setState(() => _midiDevices = MidiOut.devices());
+            controller.open();
+          },
         ),
       ),
     );
@@ -988,6 +1040,7 @@ class _PlayerTabState extends State<PlayerTab> {
 
   String _status(MusicTrack? t, String loopNote) {
     if (player.error != null) return tr(player.error!);
+    if (player.warning != null && !player.loading) return player.warning!;
     if (player.loading) {
       final progress = player.renderProgress;
       final format = player.currentFormat ?? t?.format;
@@ -1167,9 +1220,13 @@ class _PlayerTabState extends State<PlayerTab> {
                     ),
                     Text(
                       _status(t, loopNote),
-                      maxLines: player.error != null ? 2 : 1,
+                      maxLines: player.error != null || player.warning != null ? 2 : 1,
                       overflow: TextOverflow.ellipsis,
-                      style: TextStyle(fontSize: 12, color: player.error != null ? Colors.redAccent : Colors.grey),
+                      style: TextStyle(
+                          fontSize: 12,
+                          color: player.error != null
+                              ? Colors.redAccent
+                              : (player.warning != null && !player.loading ? Colors.orangeAccent : Colors.grey)),
                     ),
                     // Откуда трек: аддон и файл — открыть папку, экспортировать.
                     if (t != null)

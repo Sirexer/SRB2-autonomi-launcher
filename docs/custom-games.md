@@ -1,34 +1,37 @@
-# Свои игры (JSON)
+# Custom games (JSON)
 
-Кроме встроенных игр (SRB2, SRB2 Legacy, SRB2Kart, Ring Racers) лаунчер
-поддерживает **свои игры** — форки, которые ведут себя как одна из встроенных
-(например, [BlanKart](https://codeberg.org/NepDisk/blankart) — форк
-SRB2Kart). Своя игра описывается в JSON; поведение (запуск, параметры, скины,
-цвета, загрузка аддонов с сервера) берётся у основы (`base`), а отличия —
-файлы игры, сборки, мастер-серверы, сетевой протокол — задаются в описании.
+**English** | [Русский](custom-games.ru.md)
 
-## Где добавить
+Besides the built-in games (SRB2, SRB2 Legacy, SRB2Kart, Ring Racers) the
+launcher supports **custom games** — forks that behave like one of the
+built-in games (for example [BlanKart](https://codeberg.org/NepDisk/blankart),
+a fork of SRB2Kart). A custom game is described in JSON; the behaviour
+(launching, options, skins, colors, downloading server add-ons) comes from
+the base game (`base`), and what differs — game files, executables, master
+servers, the network protocol — is set in the definition.
 
-- **Первый запуск.** Мастер предлагает игры из `another_games.json` рядом с
-  лаунчером (в сборке он уже есть, там BlanKart). Неотмеченная игра не
-  добавляется.
-- **Settings → Games → «Add games from JSON...».** Файл может описывать одну
-  игру или несколько — тогда лаунчер покажет список, и вы выберете, какие
-  добавить. Игра с тем же `id` заменяется новым описанием.
+## Where to add one
 
-Там же, в Settings → Games:
+- **First start.** The wizard offers the games from `another_games.json` next
+  to the launcher (the release has it, with BlanKart). A game left unticked is
+  not added.
+- **Settings → Games → Add games from JSON...** A file may describe one game
+  or several — then the launcher lists them and you pick which to add. A game
+  with the same `id` is replaced by the new definition.
 
-- встроенные игры, кроме Sonic Robo Blast 2, можно **выключить** — их не будет
-  в переключателе игр (настройки и файлы остаются, включить можно в любой
-  момент);
-- свою игру можно выключить или **убрать** из лаунчера: сама игра на диске
-  не трогается, а вернуть её можно только снова из JSON;
-- кнопка **экспорта** сохраняет описание своей игры в файл (вместе с иконкой),
-  чтобы поделиться им.
+Also in Settings → Games:
 
-## Формат файла
+- built-in games other than Sonic Robo Blast 2 can be **turned off** — they
+  disappear from the game switcher (settings and files stay; turn them back on
+  any time);
+- a custom game can be turned off or **removed** from the launcher: the game
+  on disk is not touched, and it comes back only from its JSON;
+- **Export** saves a custom game's definition to a file (with its icon) to
+  share it.
 
-Одна игра — объект; несколько — список или `{"games": [...]}`:
+## File format
+
+One game is an object; several are a list or `{"games": [...]}`:
 
 ```json
 {
@@ -39,7 +42,7 @@ SRB2Kart). Своя игра описывается в JSON; поведение 
       "full_name": "SRB2Kart: BlanKart",
       "base": "srb2kart",
       "version": "2.0",
-      "protocol": { "base": "ringracers", "packet_version": 2, "...": "см. ниже" },
+      "protocol": { "base": "ringracers", "packet_version": 2, "...": "see below" },
       "master_api": "kart",
       "masters": ["https://ms.blankart.cc/MS/1"],
       "mod_version": 12,
@@ -58,71 +61,72 @@ SRB2Kart). Своя игра описывается в JSON; поведение 
 }
 ```
 
-Обязательные поля:
+Required fields:
 
-| Поле | Что это |
+| Field | Meaning |
 |---|---|
-| `id` | Код игры: 2–41 символ, строчные латинские буквы, цифры, `_`, `-`, `.`. Не может совпадать со встроенной игрой. По нему хранятся настройки игры и ищутся аддоны (`games` в манифесте). |
-| `name` | Короткое название (в переключателе, подписях). |
-| `base` | Основа: `srb2`, `srb2legacy`, `srb2kart` или `drrr`. |
+| `id` | Game code: 2–41 characters, lowercase Latin letters, digits, `_`, `-`, `.`. Must not be a built-in game. The game's settings are stored under it and add-ons are matched by it (`games` in a repository). |
+| `name` | Short name (in the switcher and labels). |
+| `base` | Base game: `srb2`, `srb2legacy`, `srb2kart` or `drrr`. |
 
-Необязательные (без них берётся значение основы):
+Optional (the base game's value is used without them):
 
-| Поле | Что это |
+| Field | Meaning |
 |---|---|
-| `full_name` | Полное название (по умолчанию — `name`). |
-| `version` | Версия игры для подписи. |
-| `icon` | Иконка (PNG): путь относительно файла JSON или `data:image/png;base64,...`. Без неё — иконка основы. |
-| `protocol` | Сетевой протокол опроса серверов: имя встроенного (`srb2`, `srb2legacy`, `srb2kart`, `ringracers`, `blankart`) или объект с описанием — см. «Протокол». |
-| `master_api` | Вид мастер-сервера: `srb2` (`/servers`) или `kart` (`/games/<приложение>/<mod_version>/servers`). |
-| `masters` | Мастер-серверы по умолчанию (список). |
-| `mod_version`, `mod_id` | MODVERSION / MODID игры: по ним мастер-сервер отдаёт её серверы и сообщает о новой версии. |
-| `main_file` | Файл, по которому узнаётся папка игры. |
-| `download_path` | Папка загрузок аддонов внутри папки игры (например `"DOWNLOAD"` или `"addons/DOWNLOAD"`). |
-| `gametypes` | Режимы игры для фильтра серверов. |
-| `has_rooms` | Есть ли у мастер-сервера комнаты. |
-| `executables` | Имена сборок: `{"windows": [...], "linux": [...]}`; первое — команда по умолчанию. |
-| `executable_hints` | Слова в имени файла сборки, по которым лаунчер догадывается, что это эта игра (по умолчанию — `id`). |
-| `linux_data_folders` | Папки игры на Linux относительно домашней (для подсказки). |
-| `palette_files`, `map_files`, `skin_files`, `music_files` | Файлы игры, из которых берутся палитра, карты, скины и музыка. |
-| `picture_inside_maps` | Картинки карт лежат внутри файлов карт. |
-| `base_addons` | `true` — показывать и аддоны основы (форк их загружает). |
-| `own_files` | Файлы самой игры с расширением аддонов (`.pk3`) — их нет в списке «В папке игры». |
+| `full_name` | Full name (default: `name`). |
+| `version` | Game version for labels. |
+| `icon` | Icon (PNG): a path relative to the JSON file or `data:image/png;base64,...`. Without it, the base game's icon. |
+| `protocol` | Server query protocol: a built-in name (`srb2`, `srb2legacy`, `srb2kart`, `ringracers`, `blankart`) or an object — see Protocol. |
+| `master_api` | Master server kind: `srb2` (`/servers`) or `kart` (`/games/<application>/<mod_version>/servers`). |
+| `masters` | Default master servers (a list). |
+| `mod_version`, `mod_id` | The game's MODVERSION / MODID: the master server lists its servers and reports a new version by them. |
+| `main_file` | The file that identifies the game folder. |
+| `download_path` | Add-on downloads folder inside the game folder (for example `"DOWNLOAD"` or `"addons/DOWNLOAD"`). |
+| `gametypes` | Gametypes for the server filter. |
+| `has_rooms` | Whether the master server has rooms. |
+| `executables` | Executable names: `{"windows": [...], "linux": [...]}`; the first is the default command. |
+| `executable_hints` | Words in an executable's file name that tell the launcher it is this game (default: `id`). |
+| `linux_data_folders` | Game folders on Linux relative to home (for suggestions). |
+| `palette_files`, `map_files`, `skin_files`, `music_files` | Game files with the palette, maps, skins and music. |
+| `picture_inside_maps` | Map pictures are inside the map files. |
+| `base_addons` | `true` — show the base game's add-ons too (the fork loads them). |
+| `own_files` | The game's own files with add-on extensions (`.pk3`) — they are not listed under In the game folder. |
 
-Ошибки в описании (нет поля, неизвестная основа или протокол) показываются
-в окне выбора игр — такую игру добавить нельзя, остальные из файла можно.
+Errors in a definition (a missing field, an unknown base or protocol) are
+shown in the game picker — such a game cannot be added; the others in the
+file can.
 
-## Протокол
+## Protocol
 
-Лаунчер опрашивает серверы игры напрямую (UDP): спрашивает serverinfo
-(название, карта, игроки, аддоны) и список игроков, а аддоны с сервера может
-скачать до подключения. У форков пакеты часто чуть отличаются — другие номера
-пакетов или смещения полей. Тогда `protocol` описывается объектом: `base` —
-встроенный протокол, на который он похож, остальные поля — отличия от него
-(всё, чего нет, берётся у основы). Полное описание протокола BlanKart — в
+The launcher queries a game's servers directly (UDP): it asks for serverinfo
+(name, map, players, add-ons) and the player list, and can download a server's
+add-ons before joining. Forks often differ a little — other packet numbers or
+field offsets. Then `protocol` is an object: `base` is the built-in protocol
+it resembles, the other fields are what differs (anything missing comes from
+the base). The full BlanKart protocol is in
 [packaging/another_games.json](../packaging/another_games.json).
 
-| Поле | Что это |
+| Field | Meaning |
 |---|---|
-| `base` | Обязательное: `srb2`, `legacy`, `srb2kart`, `ringracers` или `blankart`. |
-| `application` | SRB2APPLICATION, который сервер присылает в serverinfo. |
-| `packet_version`, `version`, `subversion` | PACKETVERSION, VERSION и SUBVERSION игры: сервер отвечает, только если они совпадают. |
-| `has_packet_version_prefix` | Ответ начинается с `_255` и packetversion (2.2 и новее; в 2.1 — нет). |
-| `version_format` | Как показывать версию: `srb2` (VERSION 202, SUBVERSION 15 → «2.2.15») или `major.minor` (2 и 4 → «2.4»). |
-| `packets` | Номера пакетов: `client_quit`, `ask_info`, `server_info`, `player_info`, `request_file`, `file_fragment`, `file_ack`, `file_received`, `tell_files_needed`, `more_files_needed` (`-1` — пакета нет). |
-| `server_info` | Смещения полей serverinfo от начала данных пакета: `application`, `version`, `players`, `refuse_reason`, `gametype`, `modified`, `flags`, `file_count`, `level_time`, `server_name`, `map_name`, `map_title`, `act_num`, `is_zone`, `http_source`, `avg_power_level`, `file_needed`. `null` — поля нет (`refuse_reason`, `map_name`, `http_source`, `avg_power_level`). |
-| `player_info` | Запись игрока в plrinfo: `size` (размер записи), смещения `team`, `skin`, `score`, `time`; `skin_wide` — скин 2 байта, а не 1. |
-| `file_entry_has_folder` | В записи файла есть байт «это папка» (SRB2 2.2). |
-| `file_hash_bytes` | Размер контрольной суммы файла: 16 (MD5) или, например, 8 (XXH3-64 всего файла, как у BlanKart; лаунчер считает его сам). |
-| `file_entry_extra` | Байты после контрольной суммы в записи файла (BlanKart: compatmode). |
-| `preload_files` | `false` — не загружать аддоны сервера заранее (`-file`), игра грузит их сама при подключении. Нужно, если игра сверяет не только файлы, но и то, как они загружены (BlanKart: compatmode — с `-file` он может не совпасть с сервером, и игра пишет «You have the wrong addons loaded»). |
-| `request_file_with_name` | В запросе файла (PT_REQUESTFILE) после номера идёт имя. |
-| `legacy_file_transfer` | Старая передача файлов (SRB2Kart, SRB2 2.1): фрагменты подтверждаются на уровне сети, без PT_FILEACK. |
-| `will_send` | Как читать «отдаст ли сервер файл»: `srb2` или `kart`. |
-| `gametype_names` | Режим игры приходит числом: `{"2": "Race", "3": "Battle"}`; `null` — строкой. |
-| `base_skins` | Встроенные скины по номеру — для списка игроков. |
+| `base` | Required: `srb2`, `legacy`, `srb2kart`, `ringracers` or `blankart`. |
+| `application` | The SRB2APPLICATION the server sends in serverinfo. |
+| `packet_version`, `version`, `subversion` | The game's PACKETVERSION, VERSION and SUBVERSION: the server answers only if they match. |
+| `has_packet_version_prefix` | The answer starts with `_255` and the packet version (2.2 and later; not in 2.1). |
+| `version_format` | How to show the version: `srb2` (VERSION 202, SUBVERSION 15 → "2.2.15") or `major.minor` (2 and 4 → "2.4"). |
+| `packets` | Packet numbers: `client_quit`, `ask_info`, `server_info`, `player_info`, `request_file`, `file_fragment`, `file_ack`, `file_received`, `tell_files_needed`, `more_files_needed` (`-1` — no such packet). |
+| `server_info` | serverinfo field offsets from the start of the packet data: `application`, `version`, `players`, `refuse_reason`, `gametype`, `modified`, `flags`, `file_count`, `level_time`, `server_name`, `map_name`, `map_title`, `act_num`, `is_zone`, `http_source`, `avg_power_level`, `file_needed`. `null` — no such field (`refuse_reason`, `map_name`, `http_source`, `avg_power_level`). |
+| `player_info` | A player record in plrinfo: `size` (record size), offsets `team`, `skin`, `score`, `time`; `skin_wide` — the skin is 2 bytes, not 1. |
+| `file_entry_has_folder` | A file entry has an "is a folder" byte (SRB2 2.2). |
+| `file_hash_bytes` | Size of a file's checksum: 16 (MD5) or, for example, 8 (XXH3-64 of the whole file, as in BlanKart; the launcher computes it). |
+| `file_entry_extra` | Bytes after the checksum in a file entry (BlanKart: compatmode). |
+| `preload_files` | `false` — do not load a server's add-ons in advance (`-file`); the game loads them itself when joining. Needed when the game checks not only the files but how they are loaded (BlanKart: compatmode — with `-file` it may differ from the server's and the game says "You have the wrong addons loaded"). |
+| `request_file_with_name` | The file request (PT_REQUESTFILE) has the name after the number. |
+| `legacy_file_transfer` | Old file transfer (SRB2Kart, SRB2 2.1): fragments are acknowledged on the network level, no PT_FILEACK. |
+| `will_send` | How to read "will the server send the file": `srb2` or `kart`. |
+| `gametype_names` | The gametype comes as a number: `{"2": "Race", "3": "Battle"}`; `null` — as a string. |
+| `base_skins` | Built-in skins by number — for the player list. |
 
-Смещения и номера берутся из исходников игры (у SRB2-подобных —
-`src/d_clisrv.h` / `src/netcode/protocol.h`, структуры `serverinfo_pak` и
-`plrinfo`). Ошибка в описании протокола показывается так же, как другие
-ошибки описания игры.
+Offsets and numbers come from the game's sources (for SRB2-like games
+`src/d_clisrv.h` / `src/netcode/protocol.h`, the `serverinfo_pak` and
+`plrinfo` structs). Errors in a protocol definition are shown like other
+definition errors.

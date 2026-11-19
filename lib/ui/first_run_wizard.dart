@@ -317,15 +317,20 @@ class _FirstRunWizardState extends State<FirstRunWizard> {
                 child: Container(
                   height: 2,
                   margin: const EdgeInsets.symmetric(horizontal: 8),
-                  color: i <= _index ? accent : Colors.white24,
+                  color: i <= _index ? accent : Theme.of(context).colorScheme.outlineVariant,
                 ),
               ),
             CircleAvatar(
               radius: 12,
-              backgroundColor: i <= _index ? accent : Colors.white24,
+              backgroundColor: i <= _index ? accent : Theme.of(context).colorScheme.outlineVariant,
               child: i < _index
-                  ? const Icon(Icons.check, size: 14, color: Colors.white)
-                  : Text('${i + 1}', style: const TextStyle(fontSize: 12, color: Colors.white)),
+                  ? Icon(Icons.check, size: 14, color: Theme.of(context).colorScheme.onPrimary)
+                  : Text('${i + 1}',
+                      style: TextStyle(
+                          fontSize: 12,
+                          color: i <= _index
+                              ? Theme.of(context).colorScheme.onPrimary
+                              : Theme.of(context).colorScheme.onSurface)),
             ),
             const SizedBox(width: 6),
             Text(label(_steps[i]),

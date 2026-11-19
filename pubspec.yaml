@@ -1,5 +1,5 @@
 name: srb2_autonomi_launcher
-description: "Universal launcher for SRB2—its main feature is downloading add-ons using Autonomi."
+description: "Versatile launcher for SRB2—its main feature is downloading add-ons using Autonomi."
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev

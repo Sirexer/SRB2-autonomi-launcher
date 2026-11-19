@@ -1,0 +1,8 @@
+{
+  "name": "Midnight (black)",
+  "dark": true,
+  "seed": "#FF6D00",
+  "accent": "#FF8A3D",
+  "background": "#000000",
+  "panels": "#0B0B0B"
+}

@@ -13,6 +13,8 @@ struct _MyApplication {
   // The launcher window; a second start (another process) activates this
   // instance again and only brings the window to the front.
   GtkWindow* window;
+  // "srb2al/window": window opacity from the launcher theme.
+  FlMethodChannel* window_channel;
 };
 
 G_DEFINE_TYPE(MyApplication, my_application, GTK_TYPE_APPLICATION)
@@ -36,6 +38,31 @@ static void set_window_icon(GtkWindow* window) {
   if (g_file_test(icon, G_FILE_TEST_EXISTS)) {
     gtk_window_set_icon_from_file(window, icon, nullptr);
   }
+}
+
+// "srb2al/window" calls from Dart: setOpacity(double 0..1) — the whole window
+// (needs a compositing window manager on X11; Wayland always composites).
+static void window_method_cb(FlMethodChannel* channel, FlMethodCall* call,
+                             gpointer user_data) {
+  MyApplication* self = MY_APPLICATION(user_data);
+  g_autoptr(FlMethodResponse) response = nullptr;
+  if (g_strcmp0(fl_method_call_get_name(call), "setOpacity") == 0) {
+    FlValue* args = fl_method_call_get_args(call);
+    double opacity = 1.0;
+    if (args != nullptr && fl_value_get_type(args) == FL_VALUE_TYPE_FLOAT) {
+      opacity = fl_value_get_float(args);
+    }
+    if (opacity < 0.2) opacity = 0.2;
+    if (opacity > 1.0) opacity = 1.0;
+    if (self->window != nullptr) {
+      gtk_widget_set_opacity(GTK_WIDGET(self->window), opacity);
+    }
+    response =
+        FL_METHOD_RESPONSE(fl_method_success_response_new(fl_value_new_bool(TRUE)));
+  } else {
+    response = FL_METHOD_RESPONSE(fl_method_not_implemented_response_new());
+  }
+  fl_method_call_respond(call, response, nullptr);
 }
 
 // Implements GApplication::activate.
@@ -105,6 +132,13 @@ static void my_application_activate(GApplication* application) {
 
   fl_register_plugins(FL_PLUGIN_REGISTRY(view));
 
+  g_autoptr(FlStandardMethodCodec) codec = fl_standard_method_codec_new();
+  self->window_channel = fl_method_channel_new(
+      fl_engine_get_binary_messenger(fl_view_get_engine(view)), "srb2al/window",
+      FL_METHOD_CODEC(codec));
+  fl_method_channel_set_method_call_handler(self->window_channel,
+                                            window_method_cb, self, nullptr);
+
   gtk_widget_grab_focus(GTK_WIDGET(view));
 }
 
@@ -151,6 +185,7 @@ static void my_application_shutdown(GApplication* application) {
 static void my_application_dispose(GObject* object) {
   MyApplication* self = MY_APPLICATION(object);
   g_clear_pointer(&self->dart_entrypoint_arguments, g_strfreev);
+  g_clear_object(&self->window_channel);
   G_OBJECT_CLASS(my_application_parent_class)->dispose(object);
 }
 

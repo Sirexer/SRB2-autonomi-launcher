@@ -256,6 +256,40 @@ void main() {
     expect(m.duration, 1.0);
   });
 
+  test('MIDI: SysEx before the tempo and between notes does not shift the track', () {
+    // Как в D_S1CNTI: сброс GS в начале дорожки, затем темп 240 BPM.
+    const gsReset = [0xF0, 10, 0x41, 0x10, 0x42, 0x12, 0x40, 0x00, 0x7F, 0x00, 0x41, 0xF7];
+    final track = [
+      0, ...gsReset,
+      0, 0xFF, 0x51, 3, 0x03, 0xD0, 0x90, // 250000 мкс на четверть
+      0, 0x90, 60, 100,
+      96, 0x80, 60, 0,
+      0, ...gsReset, // посреди нот
+      0, 0x90, 64, 100,
+      96, 0x80, 64, 0,
+      0, 0xFF, 0x2F, 0,
+    ];
+    final m = MidiFile.parse(Uint8List.fromList([
+      ...ascii.encode('MThd'), 0, 0, 0, 6, 0, 0, 0, 1, 0, 96, //
+      ...ascii.encode('MTrk'), ..._u32le(track.length).reversed, ...track,
+    ]));
+    expect([for (final e in m.events) (e.time, e.status, e.a)],
+        [(0.0, 0x90, 60), (0.25, 0x80, 60), (0.25, 0x90, 64), (0.5, 0x80, 64)]);
+  });
+
+  test('old scan cache: MIDI and MUS durations are read again, others kept', () {
+    final info = MusicFileInfo(
+      tracks: const [('D_A', 'D_A', MusicFormat.midi), ('O_B', 'O_B', MusicFormat.ogg), ('D_C', 'D_C', MusicFormat.mus)],
+      details: {
+        'D_A': const TrackDetails(durationMs: 7385000),
+        'O_B': const TrackDetails(durationMs: 60000),
+        'D_C': const TrackDetails(durationMs: 1000),
+      },
+    );
+    MusicPlayer.dropSynthDetails(info);
+    expect(info.details.keys, ['O_B']);
+  });
+
   test('Doom MUS converts to MIDI events', () {
     final mus = Uint8List.fromList([
       ...ascii.encode('MUS'), 0x1A, ..._u16le(10), ..._u16le(16), ..._u16le(1), ..._u16le(0), ..._u16le(0), ..._u16le(0),

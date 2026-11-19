@@ -18,6 +18,7 @@ import '../services/map_preview.dart';
 import 'character_picker.dart';
 import 'file_actions.dart';
 import '../services/file_hash.dart';
+import '../services/server_blacklist.dart';
 import '../services/server_downloads.dart';
 export '../services/server_downloads.dart' show RepoFileRef;
 import '../services/server_files.dart';
@@ -234,6 +235,7 @@ class _ServersTabState extends State<ServersTab> {
   void initState() {
     super.initState();
     _dl.addListener(_onDownloads);
+    ServerBlacklist.instance.load();
     if (_geo == null) {
       GeoIp.load().then((geo) {
         if (geo == null || _geo != null) return;
@@ -280,6 +282,7 @@ class _ServersTabState extends State<ServersTab> {
       if (store.hideLocal && r.fromLocal && r.favorite == null) return false;
       if (store.hideUnsupported && (r.result?.isUnsupported ?? false) && r.favorite == null) return false;
       if (store.hideIPv6 && r.isIPv6 && r.favorite == null) return false;
+      if (r.favorite == null && ServerBlacklist.instance.blocks(r.host, r.port, r.name)) return false;
       if (store.modifiedOnly && !(info?.modified ?? false)) return false;
       if (store.hideModified && (info?.modified ?? false)) return false;
       if (store.shownGametypes.isNotEmpty &&
@@ -297,7 +300,7 @@ class _ServersTabState extends State<ServersTab> {
     int rank(ServerRow r) {
       final info = r.result?.info;
       if (info == null) return r.result == null ? 2 : 3;
-      return info.isCompatible ? 0 : 1;
+      return 0;
     }
 
     int byName(ServerRow a, ServerRow b) => naturalCompare(a.name, b.name);
@@ -575,7 +578,7 @@ class _ServersTabState extends State<ServersTab> {
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
-      listenable: store,
+      listenable: Listenable.merge([store, ServerBlacklist.instance]),
       builder: (context, _) {
         final rows = _visibleRows();
         final selected = _selectedKey == null ? null : store.rowByKey(_selectedKey!);
@@ -848,7 +851,7 @@ class _ServersTabState extends State<ServersTab> {
     final info = row.result?.info;
     final ping = row.result?.pingMs;
     final offline = row.result != null && info == null;
-    final dim = offline || (info != null && !info.isCompatible);
+    final dim = offline;
     final style = TextStyle(color: dim ? Colors.grey : null, fontSize: 13);
 
     return Material(
@@ -930,6 +933,12 @@ class _ServersTabState extends State<ServersTab> {
                   ? store.removeFavorite(row.host, row.port)
                   : store.addFavorite(FavoriteServer(host: row.host, port: row.port, name: row.name)),
             ),
+            if (!isFav)
+              IconButton(
+                icon: const Icon(Icons.block),
+                tooltip: tr('Add to the blacklist'),
+                onPressed: () => _blacklistDialog(row),
+              ),
             IconButton(
               icon: row.querying
                   ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
@@ -989,11 +998,8 @@ class _ServersTabState extends State<ServersTab> {
               _chip(Icons.people_outline, '${info.players}/${info.maxPlayers} players'),
               if ((result?.botCount ?? 0) > 0) _chip(Icons.smart_toy_outlined, tr('{n} bot(s)', {'n': result!.botCount})),
               if (pingMs != null) _chip(Icons.network_ping, '$pingMs ms', color: _pingColor(pingMs)),
-              _chip(Icons.info_outline, 'v${info.versionString}',
-                  color: info.isCompatible ? null : Colors.redAccent,
-                  tooltip: info.isCompatible
-                      ? null
-                      : tr('Different version: {game} {version} cannot join', {'game': game.name, 'version': game.version})),
+              // Просто версия сервера: какая версия игры стоит у вас, лаунчер не знает.
+              _chip(Icons.info_outline, 'v${info.versionString}'),
               if (info.avgPowerLevel != null) _chip(Icons.bolt, tr('Power level {n}', {'n': info.avgPowerLevel})),
               if (info.refuseReason == 0) _chip(Icons.lock_open, tr(info.refuseText), color: Colors.green),
               if (info.refuseReason > 0)
@@ -1545,6 +1551,88 @@ class _ServersTabState extends State<ServersTab> {
         padding: const EdgeInsets.only(bottom: 6),
         child: Text(text, style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: color)),
       );
+
+  /// В чёрный список: этот сервер, все на его адресе или по слову в имени.
+  Future<void> _blacklistDialog(ServerRow row) async {
+    final word = TextEditingController();
+    var mode = 'server';
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setLocal) {
+          Widget option(String value, String title, [String? subtitle]) => RadioListTile<String>(
+                contentPadding: EdgeInsets.zero,
+                value: value,
+                title: Text(title),
+                subtitle: subtitle == null ? null : Text(subtitle),
+              );
+          final canAdd = mode != 'word' || word.text.trim().isNotEmpty;
+          return AlertDialog(
+            icon: const Icon(Icons.block, size: 36, color: Colors.redAccent),
+            title: Text(tr('Add to the blacklist')),
+            content: SizedBox(
+              width: 480,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(tr('Blacklisted servers are not shown in the list. The blacklist is in Settings → Servers.'),
+                      style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                  const SizedBox(height: 8),
+                  RadioGroup<String>(
+                    groupValue: mode,
+                    onChanged: (v) => setLocal(() => mode = v!),
+                    child: Column(
+                      children: [
+                        option('server', tr('This server'), row.address),
+                        option('host', tr('All servers at this IP address'), row.host),
+                        option('word', tr('Servers with a word in the name')),
+                      ],
+                    ),
+                  ),
+                  if (mode == 'word')
+                    Padding(
+                      padding: const EdgeInsets.only(left: 16),
+                      child: TextField(
+                        controller: word,
+                        autofocus: true,
+                        onChanged: (_) => setLocal(() {}),
+                        decoration: InputDecoration(
+                          hintText: tr('A word or part of it'),
+                          helperText: tr('Case and colors do not matter.'),
+                          isDense: true,
+                          border: const OutlineInputBorder(),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(context, false), child: Text(tr('Cancel'))),
+              FilledButton(onPressed: canAdd ? () => Navigator.pop(context, true) : null, child: Text(tr('Add'))),
+            ],
+          );
+        },
+      ),
+    );
+    final text = word.text;
+    word.dispose();
+    if (ok != true) return;
+    final list = ServerBlacklist.instance;
+    switch (mode) {
+      case 'server':
+        await list.addAddress(row.host, row.port);
+      case 'host':
+        await list.addAddress(row.host);
+      default:
+        await list.addWord(text);
+    }
+    if (!mounted) return;
+    // Скрытый сервер — снять выбор.
+    if (list.blocks(row.host, row.port, row.name)) setState(() => _selectedKey = null);
+    showSnack(context, SnackBar(content: Text(tr('Added to the blacklist'))));
+  }
 
   Widget _chip(IconData icon, String label,
       {Color? color, String? tooltip, List<Srb2TextSpan>? spans, Widget? avatar}) {

@@ -1,0 +1,9 @@
+{
+  "name": "Daylight",
+  "dark": false,
+  "seed": "#1E5BFF",
+  "accent": "#2457D6",
+  "background": "#F4F6FB",
+  "panels": "#FFFFFF",
+  "text": "#1A1D24"
+}

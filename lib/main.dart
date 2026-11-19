@@ -14,6 +14,7 @@ import 'services/addon_updates.dart';
 import 'services/app_paths.dart';
 import 'services/notices.dart';
 import 'services/custom_games.dart';
+import 'services/hidden_addon_folders.dart';
 import 'ui/first_run_wizard.dart';
 import 'ui/update_dialog.dart';
 import 'services/launcher_update.dart';
@@ -65,6 +66,7 @@ import 'ui/settings_dialog.dart';
 import 'build_info.dart';
 import 'i18n.dart';
 import 'theme/app_themes.dart';
+import 'services/window_effects.dart';
 import 'ui/snack.dart';
 import 'ui/srb2_text.dart';
 
@@ -91,6 +93,8 @@ Future<void> main(List<String> args) async {
   // Остатки прошлого обновления лаунчера (*.old, распаковка).
   unawaited(LauncherUpdate.cleanup());
   await I18n.instance.discover();
+  // Темы из папок themes (рядом с лаунчером и свои).
+  await AppThemes.load();
   // Пока язык не выбран (мастер первого запуска, Settings) — язык системы.
   await I18n.instance.load(prefs.getString('app_language') ?? I18n.instance.systemLanguage());
   // Ошибка построения части окна — не серое поле, а понятный текст
@@ -193,10 +197,13 @@ class _SRB2LauncherAppState extends State<SRB2LauncherApp> {
     if (savedTheme != null) {
       setState(() => _currentThemeKey = savedTheme);
     }
+    // Прозрачность окна — после первого кадра (окно уже есть).
+    WidgetsBinding.instance.addPostFrameCallback((_) => WindowEffects.apply(AppThemes.byKey(_currentThemeKey)));
   }
 
   Future<void> _setTheme(String key) async {
     setState(() => _currentThemeKey = key);
+    WindowEffects.apply(AppThemes.byKey(key));
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('app_theme_key', key);
   }
@@ -207,6 +214,18 @@ class _SRB2LauncherAppState extends State<SRB2LauncherApp> {
       title: tr('SRB2 Autonomi Launcher'),
       debugShowCheckedModeBanner: false,
       theme: AppThemes.getThemeData(_currentThemeKey),
+      // Тема: масштаб текста и фон (картинка, затемнение) под всем окном.
+      builder: (context, child) {
+        final t = AppThemes.byKey(_currentThemeKey);
+        var out = child ?? const SizedBox.shrink();
+        if (t.textScale != 1) {
+          out = MediaQuery(
+            data: MediaQuery.of(context).copyWith(textScaler: TextScaler.linear(t.textScale)),
+            child: out,
+          );
+        }
+        return ThemeBackground(theme: t, child: out);
+      },
       home: MainLauncherScreen(
         currentThemeKey: _currentThemeKey,
         onThemeChanged: (newKey) => _setTheme(newKey),
@@ -638,6 +657,7 @@ class _MainLauncherScreenState extends State<MainLauncherScreen> {
     final prefs = await SharedPreferences.getInstance();
     final savedGame = Games.byId(prefs.getString('app_game'));
     _game = Games.isEnabled(savedGame) ? savedGame : Games.srb2; // выключенная — SRB2
+    AppThemes.currentGame.value = _game.id; // своя картинка темы у игры
     // Экзешники (старая "Launch command" переносится в список автоматически)
     // и серверы текущей игры загружаются при первом обращении.
     _launch;
@@ -1164,6 +1184,7 @@ class _MainLauncherScreenState extends State<MainLauncherScreen> {
     }
     setState(() {
       _game = game;
+      AppThemes.currentGame.value = game.id;
       _selectedLocalFile = null; // файл из «Других загрузок» — прошлой игры
       fileStatuses = {};
       localMd5Cache = {};
@@ -1417,6 +1438,9 @@ class _MainLauncherScreenState extends State<MainLauncherScreen> {
         serversOf: (g) => _serversByGame.putIfAbsent(g.id, () => ServersStore(g)..load()),
         onGameFolderChanged: _setGameFolderOf,
         onGamesChanged: _gamesChanged,
+        onHiddenFoldersChanged: (g) {
+          if (g.id == _game.id) _refreshServerAddons();
+        },
         hiddenTags: blacklistedTagsString,
         playerEnabled: _playerEnabled,
         onPlayerEnabledChanged: _setPlayerEnabled,
@@ -2402,9 +2426,18 @@ class _MainLauncherScreenState extends State<MainLauncherScreen> {
     final game = _game;
     final root = srb2FolderPath;
     final downloads = _downloadDir;
-    final found = downloads == null ? <String>[] : await _otherDownloads(downloads, fresh: true);
-    final inFolder =
-        root == null || !_showFolderAddons ? <String>[] : await _folderAddons(game, root, fresh: true, rescan: rescan);
+    // Скрытые папки (Settings → Game folder): их аддоны не из репозиториев не показываются.
+    final hidden = await HiddenAddonFolders.resolved(game, root);
+    final found = [
+      for (final f in downloads == null ? <String>[] : await _otherDownloads(downloads, fresh: true))
+        if (!HiddenAddonFolders.hides(hidden, f)) f,
+    ];
+    final inFolder = [
+      for (final f in root == null || !_showFolderAddons
+          ? <String>[]
+          : await _folderAddons(game, root, fresh: true, rescan: rescan))
+        if (!HiddenAddonFolders.hides(hidden, f)) f,
+    ];
     final info = await _analyzePaths([...found, ...inFolder]);
     if (!mounted || game != _game) return;
     setState(() {
@@ -3790,10 +3823,15 @@ class _MainLauncherScreenState extends State<MainLauncherScreen> {
                 if (i > 0) const SizedBox(width: 6),
                 ElevatedButton(
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: _currentTab == i ? Theme.of(context).colorScheme.primary : Colors.grey[850],
-                    foregroundColor: _currentTab == i ? Colors.white : Colors.white70,
+                    backgroundColor: _currentTab == i
+                        ? Theme.of(context).colorScheme.primary
+                        : Theme.of(context).colorScheme.surfaceContainerHighest,
+                    foregroundColor: _currentTab == i
+                        ? Theme.of(context).colorScheme.onPrimary
+                        : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.75),
                     elevation: 0,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(Theme.of(context).extension<LauncherExtras>()?.radius ?? 6)),
                   ),
                   onPressed: () {
                     setState(() => _currentTab = i);

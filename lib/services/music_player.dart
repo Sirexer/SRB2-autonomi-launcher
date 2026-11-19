@@ -12,10 +12,12 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../i18n.dart';
 import 'app_activity.dart';
 import 'app_log.dart';
 import 'map_preview.dart';
 import 'media_keys.dart';
+import 'midi_device_player.dart';
 import 'midi_synth.dart';
 import 'music.dart';
 import 'music_details.dart';
@@ -42,11 +44,16 @@ class MusicPlayer extends ChangeNotifier {
   static const _kFavoritesOnly = 'player_favorites_only';
   static const _kHideDuplicates = 'player_hide_duplicates';
   static const _kExportDir = 'player_export_dir';
+  static const _kMidiDevice = 'player_midi_device';
 
   /// Версии кэшей: поиска (что в файлах) и отрисованных треков. Меняются,
   /// когда меняется то, что в них лежит.
-  static const _scanCacheVersion = 5; // 2: нечитаемый MUSICDEF; 3: карты «папкой»; 4: EncoreMusic; 5: отпечатки треков
-  static const _renderCacheVersion = 1;
+  static const _scanCacheVersion = 6; // 2: нечитаемый MUSICDEF; 3: карты «папкой»; 4: EncoreMusic; 5: отпечатки треков; 6: длительность MIDI после SysEx
+
+  /// Кэш версии 5 годится, кроме сведений о MIDI/MUS: их длительность
+  /// посчитана до исправления SysEx. Их дочитает второй проход.
+  static const _scanCacheMidiStale = 5;
+  static const _renderCacheVersion = 2; // 2: SysEx в MIDI больше не сдвигает дорожку
 
   /// Сколько места могут занять отрисованные треки на диске.
   static const _renderCacheBytes = 1 << 30;
@@ -85,6 +92,14 @@ class MusicPlayer extends ChangeNotifier {
   /// SoundFont для MIDI; null — встроенный простой синтезатор.
   String? sf2Path;
 
+  /// MIDI-устройство системы для MIDI/MUS ([MidiOut]); null — свой синтезатор.
+  /// По умолчанию на Windows — стандартное устройство (MIDI Mapper), как в игре.
+  String? midiDevice = Platform.isWindows ? 'win:*' : null;
+
+  /// Предупреждение (трек играет, но не так, как выбрано: например, MIDI-
+  /// устройство занято — играет синтезатор лаунчера).
+  String? warning;
+
   /// Добавленные SoundFont — для быстрого переключения.
   final List<String> soundFonts = [];
 
@@ -113,6 +128,12 @@ class MusicPlayer extends ChangeNotifier {
 
   AudioSource? _source;
   SoundHandle? _handle;
+
+  /// MIDI на устройство системы (вместо [_handle]).
+  MidiDevicePlayback? _midi;
+
+  /// Что-то загружено и играет (или на паузе).
+  bool get _active => _handle != null || _midi != null;
   Duration length = Duration.zero;
   /// Позиция воспроизведения — отдельным уведомлением: её частые изменения
   /// перерисовывают только ползунок и время, а не всю вкладку.
@@ -260,7 +281,7 @@ class MusicPlayer extends ChangeNotifier {
   final List<String> _history = [];
   List<String>? _bag;
 
-  bool get playing => _handle != null && !paused;
+  bool get playing => _active && !paused;
 
   Future<void> loadSettings() async {
     final prefs = await SharedPreferences.getInstance();
@@ -276,6 +297,9 @@ class MusicPlayer extends ChangeNotifier {
     shuffle = prefs.getBool(_kShuffle) ?? false;
     volumeListenable.value = (prefs.getDouble(_kVolume) ?? 0.8).clamp(0.0, 1.0);
     sf2Path = prefs.getString(_kSf2);
+    // Нет записи — по умолчанию; 'builtin' — выбран синтезатор лаунчера.
+    final savedDevice = prefs.getString(_kMidiDevice);
+    midiDevice = savedDevice == null ? (Platform.isWindows ? 'win:*' : null) : (savedDevice == 'builtin' ? null : savedDevice);
     manualFiles
       ..clear()
       ..addAll(prefs.getStringList(_kFiles) ?? const []);
@@ -316,6 +340,7 @@ class MusicPlayer extends ChangeNotifier {
     } else {
       await prefs.setString(_kSf2, sf2Path!);
     }
+    await prefs.setString(_kMidiDevice, midiDevice ?? 'builtin');
     await prefs.setStringList(_kFiles, manualFiles);
     await prefs.setStringList(_kSf2List, soundFonts);
     await prefs.setStringList(_kHidden, [for (final f in hiddenFormats) f.name]);
@@ -489,12 +514,23 @@ class MusicPlayer extends ChangeNotifier {
       if (!await f.exists()) return;
       final text = await f.readAsString();
       final j = await Isolate.run(() => jsonDecode(text)) as Map<String, Object?>;
-      if (j['v'] != _scanCacheVersion) return;
+      final v = j['v'];
+      if (v != _scanCacheVersion && v != _scanCacheMidiStale) return;
       for (final e in (j['files'] as Map).entries) {
-        _scanCache[e.key as String] = MusicFileInfo.fromJson((e.value as Map).cast<String, Object?>());
+        final info = MusicFileInfo.fromJson((e.value as Map).cast<String, Object?>());
+        if (v == _scanCacheMidiStale) dropSynthDetails(info);
+        _scanCache[e.key as String] = info;
       }
     } catch (_) {
       // повреждённый кэш — найдём заново
+    }
+  }
+
+  /// Забывает длительность MIDI/MUS у файла, чтобы её посчитали заново.
+  @visibleForTesting
+  static void dropSynthDetails(MusicFileInfo info) {
+    for (final (entry, _, format) in info.tracks) {
+      if (format.isSynth) info.details.remove(entry);
     }
   }
 
@@ -560,6 +596,7 @@ class MusicPlayer extends ChangeNotifier {
     currentFormat = t.format;
     loopStart = null;
     error = null;
+    warning = null;
     loading = true;
     renderProgress = null;
     position = Duration.zero;
@@ -568,7 +605,6 @@ class MusicPlayer extends ChangeNotifier {
     notifyListeners();
 
     try {
-      if (!await _ensureEngine()) return;
       final data = await MusicScanner.loadInBackground(t);
       if (token != _token) return;
       currentFormat = data.format;
@@ -576,6 +612,33 @@ class MusicPlayer extends ChangeNotifier {
       if (!data.format.playable) {
         throw UnsupportedError('This format (${data.format.label}) cannot be played in the launcher');
       }
+      // MIDI/MUS на устройство системы: без рендера и без аудио-движка. Не
+      // открылось — играет синтезатор лаунчера (с предупреждением).
+      if (data.format.isSynth && midiDevice != null) {
+        MidiDevicePlayback? pb;
+        try {
+          final file = await Isolate.run(() => MidiFile.parse(data.bytes));
+          if (token != _token) return;
+          pb = await MidiDevicePlayback.start(midiDevice!, file, from: from, volume: volume, loop: loop);
+        } catch (e) {
+          AppLog.console('[midi] $e');
+          warning = tr('MIDI device: {error}. Playing with the launcher synthesizer.',
+              {'error': '$e'.replaceFirst(RegExp(r'^(Bad state|StateError): '), '')});
+        }
+        if (pb != null) {
+          if (token != _token) {
+            await pb.stop();
+            return;
+          }
+          _midi = pb;
+          length = pb.length;
+          position = from;
+          _startTimer();
+          MediaKeys.enable(_onMediaKey);
+          return;
+        }
+      }
+      if (!await _ensureEngine()) return;
       // Звук не распаковывается в память целиком (LoadMode.disk): движок
       // декодирует его по ходу — в разы меньше памяти, чем PCM всего трека.
       final soloud = SoLoud.instance;
@@ -630,7 +693,7 @@ class MusicPlayer extends ChangeNotifier {
       if (token == _token) {
         loading = false;
         renderProgress = null;
-        if (_handle == null) _scheduleSleep(); // не заиграло — движку можно спать
+        if (!_active) _scheduleSleep(); // не заиграло — движку можно спать
         notifyListeners();
       }
     }
@@ -673,7 +736,7 @@ class MusicPlayer extends ChangeNotifier {
         .convert(utf8.encode(
             '$_renderCacheVersion|${_stamps[t.file] ?? t.file}|${t.entry}|${format.name}|$font|$subtrack${vorbis ? '|vorbisfile' : ''}'))
         .toString();
-    final dir = await _dataDir('music_render');
+    final dir = await _renderDir();
     final wavFile = File(p.join(dir.path, '$key.wav')), loopFile = File(p.join(dir.path, '$key.loop'));
     try {
       if (await wavFile.exists()) {
@@ -720,6 +783,28 @@ class MusicPlayer extends ChangeNotifier {
     }
   }
 
+  Future<Directory>? _renderDirFuture;
+
+  /// Папка отрисованных треков. Отрисованные прошлой версией кэша удаляются
+  /// (один раз за запуск, до первой записи): они бы больше не понадобились,
+  /// а место занимали.
+  Future<Directory> _renderDir() => _renderDirFuture ??= _openRenderDir();
+
+  Future<Directory> _openRenderDir() async {
+    final dir = await _dataDir('music_render');
+    try {
+      final mark = File(p.join(dir.path, 'version'));
+      final was = await mark.exists() ? int.tryParse((await mark.readAsString()).trim()) : null;
+      if (was != _renderCacheVersion) {
+        await for (final e in dir.list()) {
+          if (e is File && (e.path.endsWith('.wav') || e.path.endsWith('.loop'))) await e.delete();
+        }
+        await mark.writeAsString('$_renderCacheVersion');
+      }
+    } catch (_) {}
+    return dir;
+  }
+
   /// Убирает самые старые отрисованные треки, если кэш больше [_renderCacheBytes].
   Future<void> _pruneRendered(Directory dir) async {
     try {
@@ -750,7 +835,7 @@ class MusicPlayer extends ChangeNotifier {
   void _startTimer() {
     _timer?.cancel();
     _timer = null;
-    if (_handle == null || paused) return;
+    if (!_active || paused) return;
     final period = Duration(milliseconds: AppActivity.visible.value ? 250 : 1000);
     _timer = Timer.periodic(period, (_) => _tick());
   }
@@ -760,25 +845,43 @@ class MusicPlayer extends ChangeNotifier {
   }
 
   void _tick() {
+    if (_midi case final m?) {
+      if (m.error != null) {
+        error = m.error;
+        stop();
+      } else if (m.finished) {
+        _midi = null;
+        m.stop();
+        _trackEnded();
+      } else if (AppActivity.visible.value) {
+        position = m.position;
+      }
+      return;
+    }
     final h = _handle;
     if (h == null) return;
     final soloud = SoLoud.instance;
     if (!soloud.getIsValidVoiceHandle(h)) {
       // Трек доиграл (без петли) — следующий или конец списка.
       _handle = null;
-      _timer?.cancel();
-      _timer = null;
-      position = length;
-      notifyListeners();
-      final t = _pick(1, auto: true);
-      if (t == null) {
-        stop();
-      } else {
-        play(t);
-      }
+      _trackEnded();
       return;
     }
     if (AppActivity.visible.value) position = soloud.getPosition(h);
+  }
+
+  /// Трек доиграл (без петли) — следующий или конец списка.
+  void _trackEnded() {
+    _timer?.cancel();
+    _timer = null;
+    position = length;
+    notifyListeners();
+    final t = _pick(1, auto: true);
+    if (t == null) {
+      stop();
+    } else {
+      play(t);
+    }
   }
 
   void _scheduleSleep() {
@@ -795,8 +898,8 @@ class MusicPlayer extends ChangeNotifier {
   /// выгружается, но место запоминается: «Играть» продолжит с него.
   Future<void> _sleep() async {
     _sleepTimer = null;
-    if (loading || (_handle != null && !paused)) return;
-    if (_handle != null) await _stopCurrent();
+    if (loading || (_active && !paused)) return;
+    if (_active) await _stopCurrent();
     MediaKeys.disable(); // звук уснул — медиаклавиши снова другим программам
     AppLog.write('audio engine sleeps');
     final soloud = SoLoud.instance;
@@ -822,10 +925,12 @@ class MusicPlayer extends ChangeNotifier {
   Future<void> _stopCurrent() async {
     _timer?.cancel();
     final soloud = SoLoud.instance;
-    final h = _handle, s = _source;
+    final h = _handle, s = _source, m = _midi;
     _timer = null;
     _handle = null;
     _source = null;
+    _midi = null;
+    if (m != null) await m.stop();
     try {
       if (h != null) await soloud.stop(h);
       if (s != null) await soloud.disposeSource(s);
@@ -869,6 +974,20 @@ class MusicPlayer extends ChangeNotifier {
   }
 
   void togglePause() {
+    if (_midi case final m?) {
+      paused = !paused;
+      if (paused) {
+        m.pause();
+        position = m.position;
+        _scheduleSleep();
+      } else {
+        m.resume();
+        _cancelSleep();
+      }
+      _startTimer();
+      notifyListeners();
+      return;
+    }
     final h = _handle;
     if (h == null) {
       // Остановлен — сначала; на паузе, а движок уснул, — с того же места.
@@ -895,6 +1014,12 @@ class MusicPlayer extends ChangeNotifier {
   void seek(Duration to) {
     final h = _handle;
     final clamped = to < Duration.zero ? Duration.zero : (to > length ? length : to);
+    if (_midi case final m?) {
+      m.seek(clamped);
+      position = clamped;
+      notifyListeners();
+      return;
+    }
     if (h == null) {
       // На паузе, а движок уснул: «Играть» продолжит с нового места.
       if (current != null && paused) position = clamped;
@@ -915,6 +1040,7 @@ class MusicPlayer extends ChangeNotifier {
 
   void setRepeat(PlayerRepeat r) {
     repeat = r;
+    _midi?.setLoop(loop);
     final h = _handle;
     if (h != null) {
       SoLoud.instance.setLooping(h, loop);
@@ -948,6 +1074,7 @@ class MusicPlayer extends ChangeNotifier {
   /// менять (ползунок шлёт десятки значений в секунду).
   void setVolume(double v) {
     volumeListenable.value = v.clamp(0.0, 1.0);
+    _midi?.setVolume(volume);
     final h = _handle;
     if (h != null) {
       try {
@@ -1045,10 +1172,27 @@ class MusicPlayer extends ChangeNotifier {
     _save();
     notifyListeners();
     final t = current;
-    if (t != null && (currentFormat?.isSynth ?? false) && (_handle != null || loading)) {
+    if (t != null && (currentFormat?.isSynth ?? false) && (_active || loading)) {
       play(t, from: position);
     }
   }
+
+  /// Вывод MIDI: устройство системы ([MidiOut.devices]) или null — свой
+  /// синтезатор. Играющий MIDI продолжается с того же места.
+  void setMidiDevice(String? id) {
+    if (id == midiDevice) return;
+    midiDevice = id;
+    _save();
+    notifyListeners();
+    final t = current;
+    if (t != null && (currentFormat?.isSynth ?? false) && (_active || loading)) {
+      play(t, from: position);
+    }
+  }
+
+  /// Уровни полос визуализации по звучащим нотам, если MIDI играет на
+  /// устройстве (спектра тогда нет: звук идёт мимо плеера); иначе null.
+  Float32List? noteLevels() => playing ? _midi?.levels : null;
 
   /// Убирает SoundFont из списка (файл не трогаем).
   void removeSoundFont(String path) {

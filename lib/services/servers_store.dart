@@ -8,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/game.dart';
 import '../models/srb2_server.dart';
 import 'legacy_master.dart';
+import 'server_blacklist.dart';
 import 'srb2_query.dart';
 
 /// Сервер из локального списка (избранное) — работает без мастер-сервера.
@@ -671,7 +672,13 @@ class ServersStore extends ChangeNotifier {
   Future<void> queryAll() async {
     _bulk = true;
     // Скрытые IPv6-серверы не опрашиваем (кроме своих).
-    final queue = [for (final r in rows) if (!hideIPv6 || !r.isIPv6 || r.favorite != null) (r.host, r.port)];
+    // и серверы из чёрного списка по адресу.
+    final queue = [
+      for (final r in rows)
+        if (r.favorite != null ||
+            ((!hideIPv6 || !r.isIPv6) && !ServerBlacklist.instance.blocksAddress(r.host, r.port)))
+          (r.host, r.port),
+    ];
     Future<void> worker() async {
       while (queue.isNotEmpty) {
         final (host, port) = queue.removeLast();
