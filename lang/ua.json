@@ -1204,5 +1204,8 @@
   "3D model pack imported": "Набір 3D-моделей імпортовано",
   "3D model pack: not downloaded yet": "Набір 3D-моделей: ще не завантажено",
   "Open Models": "Відкрити моделі",
-  "Models for \"{name}\" imported!": "Моделі для «{name}» імпортовано!"
+  "Models for \"{name}\" imported!": "Моделі для «{name}» імпортовано!",
+  "Cannot write to folder": "Не вдалося записати в папку",
+  "Installed": "Встановлено",
+  "Selected": "Обрано"
 }

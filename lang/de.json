@@ -1204,5 +1204,8 @@
   "3D model pack imported": "3D-Modellpaket importiert",
   "3D model pack: not downloaded yet": "3D-Modellpaket: noch nicht heruntergeladen",
   "Open Models": "Modelle öffnen",
-  "Models for \"{name}\" imported!": "Modelle für „{name}“ importiert!"
+  "Models for \"{name}\" imported!": "Modelle für „{name}“ importiert!",
+  "Cannot write to folder": "In Ordner konnte nicht geschrieben werden",
+  "Installed": "Installiert",
+  "Selected": "Ausgewählt"
 }
