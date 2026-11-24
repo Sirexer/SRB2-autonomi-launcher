@@ -380,7 +380,7 @@ class _ModelsSettingsState extends State<ModelsSettings> {
     await _lib!.choose(c.key, switch (pick) {
       ModelPickAuto() => null,
       ModelPickOff() => '',
-      ModelPickPack(:final packId) => packId,
+      ModelPickPack(:final packId, :final modelPath) => modelPath == null ? packId : '$packId|$modelPath',
     });
     _changed();
     if (mounted && widget.gameFolder != null) {
@@ -1079,8 +1079,10 @@ class _ModelsSettingsState extends State<ModelsSettings> {
               itemBuilder: (_) => [
                 for (final (pack, m) in c.candidates)
                   CheckedPopupMenuItem(
-                    value: ModelPickPack(pack.id),
-                    checked: chosen?.$1.id == pack.id,
+                    value: ModelPickPack(pack.id, m.line.path),
+                    checked: chosen != null &&
+                        chosen.$1.id == pack.id &&
+                        chosen.$2.line.path.toLowerCase() == m.line.path.toLowerCase(),
                     child: Text('${pack.name} · ${m.line.path}'),
                   ),
                 const PopupMenuDivider(),

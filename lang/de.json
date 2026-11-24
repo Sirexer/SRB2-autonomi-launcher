@@ -1249,5 +1249,7 @@
   "Missing": "Fehlt",
   "Replays": "Wiederholungen",
   "A Replays tab for Sonic Robo Blast 2: browse recorded .lmp replays, import or download them into SRB2AL-Replays, inspect maps, characters and required addons, and play them back.": "Ein Reiter „Wiederholungen“ für Sonic Robo Blast 2: aufgezeichnete .lmp-Wiederholungen durchsuchen, nach SRB2AL-Replays importieren oder herunterladen, Karten, Charaktere und benötigte Addons prüfen und abspielen.",
-  "Play with another build": "Mit anderem Build starten"
+  "Play with another build": "Mit anderem Build starten",
+  "Failed to import models: {error}": "Modelle konnten nicht importiert werden: {error}",
+  "{game}: 3D models are not supported": "{game}: 3D-Modelle werden nicht unterstützt"
 }

@@ -61,6 +61,54 @@ class ModelDat {
   /// Число целиком, как его прочтёт `%f` (иначе остаток сломает разбор).
   static bool isNumber(String s) => RegExp(r'^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$').hasMatch(s);
 
+  /// Разбор текстового README (например, `Read Please!.txt` рядом с моделями),
+  /// если в паке нет `models.dat`: извлекает валидные строки `имя путь масштаб смещение`,
+  /// а также безымянные альтернативные/бонусные строки (`путь масштаб смещение`),
+  /// сопоставляя их с моделями по имени файла; длинные пути укорачиваются при сборке.
+  static ModelDat extractFromReadme(String text, ModelFormat f) {
+    final primary = <ModelLine>[];
+    final byBasename = <String, List<ModelLine>>{};
+    final nameOk = RegExp(r'^[A-Za-z0-9_.\-]+$');
+    final bonusCandidates = <(String path, String scale, String offset)>[];
+
+    for (final raw in const LineSplitter().convert(text)) {
+      final trimmed = raw.trim();
+      if (trimmed.isEmpty || trimmed.startsWith('#') || trimmed.startsWith(';')) continue;
+      final parts = trimmed.split(RegExp(r'\s+'));
+      if (parts.length == 4) {
+        final name = parts[0], path = parts[1], scale = parts[2], offset = parts[3];
+        if (!nameOk.hasMatch(name) || name.length > 64) continue;
+        final lowerPath = path.toLowerCase();
+        if (!lowerPath.endsWith('.md3') && !lowerPath.endsWith('.md2')) continue;
+        if (!isNumber(scale) || !isNumber(offset)) continue;
+        final ml = ModelLine(name, path, scale, offset);
+        primary.add(ml);
+        final base = p.posix.basename(lowerPath.replaceAll('\\', '/'));
+        (byBasename[base] ??= []).add(ml);
+      } else if (parts.length == 3) {
+        final path = parts[0], scale = parts[1], offset = parts[2];
+        final lowerPath = path.toLowerCase();
+        if (!lowerPath.endsWith('.md3') && !lowerPath.endsWith('.md2')) continue;
+        if (!isNumber(scale) || !isNumber(offset)) continue;
+        bonusCandidates.add((path, scale, offset));
+      }
+    }
+
+    final seen = {for (final l in primary) '${l.key}\u0000${l.path.replaceAll('\\', '/').toLowerCase()}'};
+    final alts = <ModelLine>[];
+    for (final (path, scale, offset) in bonusCandidates) {
+      final normLower = path.replaceAll('\\', '/').toLowerCase();
+      final base = p.posix.basename(normLower);
+      for (final proto in byBasename[base] ?? const <ModelLine>[]) {
+        if (seen.add('${proto.key}\u0000$normLower')) {
+          alts.add(ModelLine(proto.name, path, scale, offset));
+        }
+      }
+    }
+    // Альтернативы/бонусы идут перед основными строками, чтобы последняя строка осталась основной по умолчанию.
+    return ModelDat([...alts, ...primary]);
+  }
+
   /// Текст списка: строка на модель, без комментариев и пустых строк.
   static String write(Iterable<ModelLine> lines) => lines.map((l) => '${l.text}\r\n').join();
 }
@@ -101,6 +149,9 @@ class ModelPack {
   /// Что было не так при добавлении (строки после обрыва и т.п.).
   final List<String> notes;
 
+  /// Ключ файла репозитория (если набор скачан и добавлен из репозитория).
+  final String? sourceKey;
+
   ModelPack({
     required this.id,
     required this.name,
@@ -109,6 +160,7 @@ class ModelPack {
     required this.bytes,
     required this.added,
     this.notes = const [],
+    this.sourceKey,
   });
 
   /// Файл набора по пути из списка.
@@ -122,6 +174,7 @@ class ModelPack {
         'added': added.toIso8601String(),
         'bytes': bytes,
         'notes': notes,
+        if (sourceKey != null) 'source_key': sourceKey,
         'models': [for (final m in models) m.toJson()],
       };
 
@@ -132,6 +185,7 @@ class ModelPack {
         bytes: (j['bytes'] as num?)?.toInt() ?? 0,
         added: DateTime.tryParse(j['added'] as String? ?? '') ?? DateTime.fromMillisecondsSinceEpoch(0),
         notes: [for (final n in j['notes'] as List? ?? const []) '$n'],
+        sourceKey: j['source_key'] as String?,
         models: [
           for (final m in j['models'] as List? ?? const []) PackModel.fromJson((m as Map).cast<String, Object?>()),
         ],
@@ -360,7 +414,12 @@ class ModelLibrary {
   Future<void> save() async {
     await root.create(recursive: true);
     disabled.removeWhere((id) => !packs.any((x) => x.id == id));
-    choice.removeWhere((_, id) => id.isNotEmpty && !packs.any((x) => x.id == id));
+    choice.removeWhere((_, id) {
+      if (id.isEmpty) return false;
+      final sep = id.indexOf('|');
+      final packId = sep < 0 ? id : id.substring(0, sep);
+      return !packs.any((x) => x.id == packId);
+    });
     await File(p.join(root.path, 'setup.json')).writeAsString(jsonEncode({
       'order': [for (final x in packs) x.id],
       'disabled': disabled.toList(),
@@ -374,13 +433,13 @@ class ModelLibrary {
 
   /// Добавляет набор из архива (.zip/.pk3) или папки со списком моделей;
   /// он встаёт первым. FormatException — списка моделей нет.
-  Future<ModelPack> add(String source, {String? name}) async {
+  Future<ModelPack> add(String source, {String? name, String? sourceKey}) async {
     await root.create(recursive: true);
     final title = name ?? _titleOf(source);
     final id = '${_slug(title)}-${DateTime.now().millisecondsSinceEpoch}';
     final dir = p.join(root.path, id);
     final fmt = format;
-    final j = await Isolate.run(() => _import(source, dir, title, fmt));
+    final j = await Isolate.run(() => _import(source, dir, title, fmt, sourceKey: sourceKey));
     final pack = ModelPack.fromJson(id, dir, j);
     packs.insert(0, pack);
     await save();
@@ -429,11 +488,10 @@ class ModelLibrary {
 
   /// В изоляте: читает набор из [source] и копирует нужные файлы в [dir].
   /// Возвращает содержимое `pack.json`.
-  static Map<String, Object?> _import(String source, String dir, String name, ModelFormat f) {
+  static Map<String, Object?> _import(String source, String dir, String name, ModelFormat f, {String? sourceKey}) {
     final src = _PackSource.open(source, f);
     try {
-      final datText = latin1.decode(src.read(src.dat!), allowInvalid: true);
-      final dat = ModelDat.parse(datText, f);
+      final dat = src.preparsed ?? ModelDat.parse(latin1.decode(src.read(src.dat!), allowInvalid: true), f);
       final notes = <String>[];
       if (dat.stopLine != null) {
         notes.add('stopped:${dat.stopLine}:${dat.stopReason}');
@@ -458,6 +516,8 @@ class ModelLibrary {
       }
 
       final models = <PackModel>[];
+      final byBasename = <String, List<ModelLine>>{};
+      final seenModels = <String>{};
       for (final l in dat.lines) {
         final path = spell(l.path.replaceAll('\\', '/'));
         final stem = _stem(path);
@@ -466,7 +526,36 @@ class ModelLibrary {
         final hasBlend = copy('${stem}_blend.png');
         models.add(PackModel(ModelLine(l.name, path, l.scale, l.offset),
             hasModel: hasModel, hasTexture: hasTexture, hasBlend: hasBlend));
+        final lower = path.toLowerCase();
+        seenModels.add('${l.key}\u0000$lower');
+        (byBasename[p.posix.basename(lower)] ??= []).add(l);
       }
+
+      // Неупомянутые в списке файлы .md3/.md2 с таким же именем файла — альтернативные версии моделей внутри этого же пака.
+      final altModels = <PackModel>[];
+      final extraFiles = src.modelFiles.toList()..sort();
+      for (final relLower in extraFiles) {
+        if (copied.contains(relLower)) continue;
+        if (!relLower.endsWith('.md3') && !relLower.endsWith('.md2')) continue;
+        final matches = byBasename[p.posix.basename(relLower)];
+        if (matches == null || matches.isEmpty) continue;
+        final origPath = spell(src.originalRelPath(relLower));
+        final stem = _stem(origPath);
+        final hasModel = copy(origPath);
+        final hasTexture = copy('$stem.png') || copy('$stem.pcx');
+        final hasBlend = copy('${stem}_blend.png');
+        for (final proto in matches) {
+          if (!seenModels.add('${proto.key}\u0000${origPath.toLowerCase()}')) continue;
+          altModels.add(PackModel(
+            ModelLine(proto.name, origPath, proto.scale, proto.offset),
+            hasModel: hasModel,
+            hasTexture: hasTexture,
+            hasBlend: hasBlend,
+          ));
+        }
+      }
+
+      final allModels = [...altModels, ...models];
       final unused = src.modelFiles.where((x) => !copied.contains(x.toLowerCase())).length;
       if (unused > 0) notes.add('unused:$unused');
       final meta = {
@@ -474,7 +563,8 @@ class ModelLibrary {
         'added': DateTime.now().toIso8601String(),
         'bytes': bytes,
         'notes': notes,
-        'models': [for (final m in models) m.toJson()],
+        if (sourceKey != null) 'source_key': sourceKey,
+        'models': [for (final m in allModels) m.toJson()],
       };
       File(p.join(dir, 'pack.json'))
         ..parent.createSync(recursive: true)
@@ -506,8 +596,10 @@ class ModelLibrary {
       if (!enabled(pack)) continue;
       final seen = <String>{};
       for (final m in pack.models.reversed) {
-        // В наборе — последняя строка с именем (как в игре).
-        if (!seen.add(m.key)) continue;
+        // В одном наборе может быть несколько версий с одним именем;
+        // последняя в списке набора идёт первой (основной по умолчанию).
+        final sig = '${m.key}\u0000${m.line.path.toLowerCase()}\u0000${m.line.scale}\u0000${m.line.offset}';
+        if (!seen.add(sig)) continue;
         (byKey[m.key] ??= []).add((pack, m));
       }
     }
@@ -518,7 +610,19 @@ class ModelLibrary {
           final list = byKey[k]!;
           final want = choice[k];
           if (want == '') return ModelChoice(k, list, null, manual: true);
-          final manual = want == null ? null : list.where((c) => c.$1.id == want).firstOrNull;
+          (ModelPack, PackModel)? manual;
+          if (want != null) {
+            final sep = want.indexOf('|');
+            if (sep < 0) {
+              manual = list.where((c) => c.$1.id == want).firstOrNull;
+            } else {
+              final packId = want.substring(0, sep);
+              final pathLower = want.substring(sep + 1).toLowerCase();
+              manual = list
+                  .where((c) => c.$1.id == packId && c.$2.line.path.toLowerCase() == pathLower)
+                  .firstOrNull;
+            }
+          }
           // По порядку наборов — первая версия, которая попадёт в пак (с файлом
           // и не слишком длинным именем); если таких нет — просто первая.
           final usable = list.where((c) => fits(c.$2)).firstOrNull;
@@ -881,41 +985,117 @@ class _PackSource {
   /// Список моделей (путь в папке или запись архива).
   final Object? dat;
 
+  /// Заранее разобранный список (например, строки для `models.dat` из `Read Please!.txt`).
+  final ModelDat? preparsed;
+
   /// Файлы папки моделей: путь от неё (через `/`, нижний регистр) → файл.
   final Map<String, Object> _files;
 
-  _PackSource._(this._dir, this._zip, this.dat, this._files);
+  /// Оригинальный относительный путь (с сохранением регистра) для [modelFiles].
+  final Map<String, String> _originalPaths;
+
+  _PackSource._(this._dir, this._zip, this.dat, this._files, [this.preparsed, this._originalPaths = const {}]);
 
   Iterable<String> get modelFiles => _files.keys;
+
+  String originalRelPath(String lowerRel) => _originalPaths[lowerRel] ?? lowerRel;
 
   static const _datNames = ['models.dat', 'mdls.dat', 'blanmodels.dat', 'md2.dat'];
   static const _folderNames = ['models', 'mdls', 'md2'];
 
+  static (Map<String, Object>, Map<String, String>) _collectDirFiles(
+      Directory dir, File skip, ModelFormat f, List<String> folderNames) {
+    final entries = dir.listSync();
+    final folders = entries
+        .whereType<Directory>()
+        .where((e) => folderNames.contains(p.basename(e.path).toLowerCase()))
+        .toList()
+      ..sort((a, b) => (p.basename(a.path).toLowerCase() == f.folder.toLowerCase() ? 0 : 1)
+          .compareTo(p.basename(b.path).toLowerCase() == f.folder.toLowerCase() ? 0 : 1));
+    final files = <String, Object>{};
+    final orig = <String, String>{};
+    for (final d in folders.isEmpty ? [dir] : folders) {
+      for (final e in d.listSync(recursive: true).whereType<File>()) {
+        if (e.path == skip.path) continue;
+        final rel = p.relative(e.path, from: d.path).replaceAll('\\', '/');
+        final key = rel.toLowerCase();
+        if (!files.containsKey(key)) {
+          files[key] = e.path;
+          orig[key] = rel;
+        }
+      }
+    }
+    return (files, orig);
+  }
+
+  static (Map<String, Object>, Map<String, String>) _collectZipFiles(
+      AddonArchive zip, String prefix, Object skip, List<String> folderNames) {
+    final files = <String, Object>{};
+    final orig = <String, String>{};
+    for (final e in zip.entries) {
+      final norm = e.path.replaceAll('\\', '/');
+      if (norm.endsWith('/') || !norm.startsWith(prefix)) continue;
+      final rest = norm.substring(prefix.length);
+      final slash = rest.indexOf('/');
+      if (slash < 0 || !folderNames.contains(rest.substring(0, slash).toLowerCase())) continue;
+      final rel = rest.substring(slash + 1);
+      final key = rel.toLowerCase();
+      if (!files.containsKey(key)) {
+        files[key] = e;
+        orig[key] = rel;
+      }
+    }
+    if (files.isEmpty) {
+      for (final e in zip.entries) {
+        final norm = e.path.replaceAll('\\', '/');
+        if (norm.endsWith('/') || e == skip || !norm.startsWith(prefix)) continue;
+        final rel = norm.substring(prefix.length);
+        final key = rel.toLowerCase();
+        if (!files.containsKey(key)) {
+          files[key] = e;
+          orig[key] = rel;
+        }
+      }
+    }
+    return (files, orig);
+  }
+
   static _PackSource open(String source, ModelFormat f) {
-    final datNames = {f.datFile.toLowerCase(), ..._datNames};
-    final folderNames = {f.folder.toLowerCase(), ..._folderNames};
+    final datNames = {f.datFile.toLowerCase(), ...f.extraDatFiles.map((e) => e.toLowerCase()), ..._datNames};
+    final folderNames = [f.folder.toLowerCase(), ..._folderNames.where((x) => x != f.folder.toLowerCase())];
     if (Directory(source).existsSync()) {
-      // Корень или папка на уровень глубже (архив распакован в свою папку).
-      final roots = [Directory(source), ...Directory(source).listSync().whereType<Directory>()];
-      for (final r in roots) {
-        final entries = r.listSync();
-        final dat = entries.whereType<File>().where((e) => datNames.contains(p.basename(e.path).toLowerCase())).firstOrNull;
-        if (dat == null) continue;
-        // Папка формата игры — первой: её файлы главнее.
-        final folders = entries.whereType<Directory>().where((e) => folderNames.contains(p.basename(e.path).toLowerCase())).toList()
-          ..sort((a, b) => (p.basename(a.path).toLowerCase() == f.folder.toLowerCase() ? 0 : 1)
-              .compareTo(p.basename(b.path).toLowerCase() == f.folder.toLowerCase() ? 0 : 1));
-        final files = <String, Object>{};
-        // Нет папки моделей — пути списка от папки со списком (набор, который
-        // распаковывают прямо в models/, а список переносят на уровень выше).
-        for (final d in folders.isEmpty ? [r] : folders) {
-          for (final e in d.listSync(recursive: true).whereType<File>()) {
-            if (e.path == dat.path) continue;
-            final rel = p.relative(e.path, from: d.path).replaceAll('\\', '/');
-            files.putIfAbsent(rel.toLowerCase(), () => e.path);
+      final txts = <File>[];
+      // Поиск вширь (до 4 уровней вложенности), чтобы сначала находить самый верхний models.dat.
+      var queue = [Directory(source)];
+      for (var depth = 0; depth <= 4 && queue.isNotEmpty; depth++) {
+        final next = <Directory>[];
+        for (final r in queue) {
+          final entries = r.listSync();
+          next.addAll(entries.whereType<Directory>());
+          final dat = entries
+              .whereType<File>()
+              .where((e) => datNames.contains(p.basename(e.path).toLowerCase()))
+              .firstOrNull;
+          if (dat != null) {
+            final (files, orig) = _collectDirFiles(r, dat, f, folderNames);
+            return _PackSource._(source, null, dat.path, files, null, orig);
+          }
+          for (final e in entries.whereType<File>()) {
+            if (p.extension(e.path).toLowerCase() == '.txt') txts.add(e);
           }
         }
-        return _PackSource._(source, null, dat.path, files);
+        queue = next;
+      }
+      // Запасной вариант: если отдельного models.dat нет, но в README (.txt) приложены строки для него.
+      for (final txt in txts) {
+        try {
+          if (txt.lengthSync() > 512 * 1024) continue;
+          final parsed = ModelDat.extractFromReadme(utf8.decode(txt.readAsBytesSync(), allowMalformed: true), f);
+          if (parsed.lines.isEmpty) continue;
+          final (files, orig) = _collectDirFiles(txt.parent, txt, f, folderNames);
+          final cand = _PackSource._(source, null, txt.path, files, parsed, orig);
+          if (parsed.lines.any((l) => cand.find(l.path) != null)) return cand;
+        } catch (_) {}
       }
       throw FormatException('no ${f.datFile}');
     }
@@ -925,35 +1105,63 @@ class _PackSource {
       throw const FormatException('not a zip archive');
     }
     ArchiveEntry? dat;
+    String datNorm = '';
+    var datDepth = 1 << 30;
+    var datExact = false;
+    final txtCandidates = <(ArchiveEntry entry, String norm, int depth)>[];
     for (final e in zip.entries) {
-      final parts = e.path.split('/');
-      if (parts.length > 2 || !datNames.contains(parts.last.toLowerCase())) continue;
-      if (dat == null || parts.length < dat.path.split('/').length) dat = e;
-    }
-    if (dat == null) {
-      zip.close();
-      throw FormatException('no ${f.datFile}');
-    }
-    final prefix = dat.path.contains('/') ? '${dat.path.substring(0, dat.path.lastIndexOf('/'))}/' : '';
-    final files = <String, Object>{};
-    for (final e in zip.entries) {
-      if (!e.path.startsWith(prefix)) continue;
-      final rest = e.path.substring(prefix.length);
-      final slash = rest.indexOf('/');
-      if (slash < 0 || !folderNames.contains(rest.substring(0, slash).toLowerCase())) continue;
-      files.putIfAbsent(rest.substring(slash + 1).toLowerCase(), () => e);
-    }
-    if (files.isEmpty) {
-      // Папки моделей нет — пути от папки со списком (см. выше).
-      for (final e in zip.entries) {
-        if (e.path.startsWith(prefix) && e != dat) files.putIfAbsent(e.path.substring(prefix.length).toLowerCase(), () => e);
+      final norm = e.path.replaceAll('\\', '/');
+      if (norm.endsWith('/') || norm.startsWith('__MACOSX/')) continue;
+      final parts = norm.split('/');
+      final fileLower = parts.last.toLowerCase();
+      if (datNames.contains(fileLower)) {
+        final exact = fileLower == f.datFile.toLowerCase();
+        if (dat == null || parts.length < datDepth || (parts.length == datDepth && exact && !datExact)) {
+          dat = e;
+          datNorm = norm;
+          datDepth = parts.length;
+          datExact = exact;
+        }
+      } else if (fileLower.endsWith('.txt') && e.size <= 512 * 1024) {
+        txtCandidates.add((e, norm, parts.length));
       }
     }
-    return _PackSource._(null, zip, dat, files);
+    if (dat != null) {
+      final prefix = datNorm.contains('/') ? '${datNorm.substring(0, datNorm.lastIndexOf('/'))}/' : '';
+      final (files, orig) = _collectZipFiles(zip, prefix, dat, folderNames);
+      return _PackSource._(null, zip, dat, files, null, orig);
+    }
+    // Запасной вариант для ZIP без models.dat (например, `Read Please!.txt` со строками моделей).
+    txtCandidates.sort((a, b) => a.$3.compareTo(b.$3));
+    for (final (txtEntry, norm, _) in txtCandidates) {
+      try {
+        final parsed = ModelDat.extractFromReadme(utf8.decode(zip.read(txtEntry), allowMalformed: true), f);
+        if (parsed.lines.isEmpty) continue;
+        final prefix = norm.contains('/') ? '${norm.substring(0, norm.lastIndexOf('/'))}/' : '';
+        final (files, orig) = _collectZipFiles(zip, prefix, txtEntry, folderNames);
+        final cand = _PackSource._(null, zip, txtEntry, files, parsed, orig);
+        if (parsed.lines.any((l) => cand.find(l.path) != null)) return cand;
+      } catch (_) {}
+    }
+    zip.close();
+    throw FormatException('no ${f.datFile}');
   }
 
   /// Файл папки моделей по пути из списка (без учёта регистра).
-  Object? find(String path) => _files[path.replaceAll('\\', '/').toLowerCase()];
+  Object? find(String path) {
+    final norm = path.replaceAll('\\', '/').toLowerCase();
+    final direct = _files[norm];
+    if (direct != null) return direct;
+    // Некоторые списки содержат ведущий префикс `models/` даже при наличии папки `models/`.
+    for (final folder in _folderNames) {
+      final prefix = '$folder/';
+      if (norm.startsWith(prefix)) {
+        final stripped = _files[norm.substring(prefix.length)];
+        if (stripped != null) return stripped;
+      }
+    }
+    return null;
+  }
 
   Uint8List read(Object entry) =>
       entry is ArchiveEntry ? _zip!.read(entry) : File(entry as String).readAsBytesSync();

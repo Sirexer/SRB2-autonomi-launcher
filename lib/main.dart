@@ -2426,7 +2426,7 @@ class _MainLauncherScreenState extends State<MainLauncherScreen> {
         // не считается.
         final paths = <String>{};
         for (final f in mod.files) {
-          if (f.type.isBuild) continue;
+          if (f.type != ModFileType.addon) continue;
           var local = AddonPaths.candidates(downloads, mod, f)
               .where((c) => File(c).existsSync() && _sameSize(c, f.size))
               .firstOrNull;
@@ -3264,13 +3264,44 @@ class _MainLauncherScreenState extends State<MainLauncherScreen> {
   /// Проверяет файлы выбранной версии: в папке версии и в корне DOWNLOAD.
   /// Статусы: ok, outdated (в папке версии лежит другой файл), other
   /// (в корне DOWNLOAD файл с тем же именем, но другой версии), missing.
+  Future<String> _modelsDownloadDir() async =>
+      p.join((await AppPaths.modelsDir()).path, _game.id);
+
+  /// Импортирует скачанный архив [path] в библиотеку наборов моделей игры; null — успех,
+  /// иначе текст ошибки.
+  Future<String?> _importModelsFromFile(ModItem mod, ModFile file, String path) async {
+    if (_game.models == null) {
+      return tr('{game}: 3D models are not supported', {'game': _game.name});
+    }
+    try {
+      final lib = await ModelLibrary.load(_game);
+      final name = '${mod.name} ${file.version}'.trim();
+      if (!lib.packs.any((p) => p.sourceKey == file.key || p.name == name)) {
+        await lib.add(path, name: name, sourceKey: file.key);
+      }
+      return null;
+    } catch (e) {
+      AppLog.console('Failed to import models from $path: $e');
+      return '$e';
+    }
+  }
+
   Future<void> _checkModFilesStatus(ModItem mod, {bool force = false}) async {
-    if (srb2FolderPath == null) return;
     final version = _selectedVersion(mod);
     if (version == null) return;
 
     final token = ++_checkToken;
-    final downloadDir = _downloadDir!;
+    final downloadDir = _downloadDir;
+    final hasModels = version.files.any((f) => f.type == ModFileType.models);
+    final modelsDir = hasModels ? await _modelsDownloadDir() : null;
+    ModelLibrary? modelsLib;
+    if (hasModels && _game.models != null) {
+      try {
+        modelsLib = await ModelLibrary.load(_game);
+      } catch (_) {}
+    }
+    if (!mounted || token != _checkToken) return;
+
     final statuses = {for (final f in version.files) f.key: 'checking'};
     final md5s = <String, String>{};
     final paths = <String, String>{};
@@ -3285,7 +3316,6 @@ class _MainLauncherScreenState extends State<MainLauncherScreen> {
       });
     }
 
-    if (!mounted) return;
     publish();
 
     for (final file in version.files) {
@@ -3311,6 +3341,34 @@ class _MainLauncherScreenState extends State<MainLauncherScreen> {
           }
         }
         statuses[file.key] = status;
+        publish();
+        continue;
+      }
+
+      if (file.type == ModFileType.models) {
+        final candidates = AddonPaths.candidates(modelsDir!, mod, file);
+        var status = 'missing';
+        final packName = '${mod.name} ${file.version}'.trim();
+        final imported = modelsLib == null ||
+            modelsLib.packs.any((p) => p.sourceKey == file.key || p.name == packName);
+        for (final c in candidates) {
+          final md5 = await _md5For(c, force: force);
+          if (!mounted || token != _checkToken) return;
+          if (md5 == null) continue;
+          if (file.md5.isEmpty || md5 == file.md5) {
+            md5s[file.key] = md5;
+            paths[file.key] = c;
+            if (imported) status = 'ok';
+            break;
+          }
+        }
+        statuses[file.key] = status;
+        publish();
+        continue;
+      }
+
+      if (downloadDir == null) {
+        statuses[file.key] = 'missing';
         publish();
         continue;
       }
@@ -3821,12 +3879,30 @@ class _MainLauncherScreenState extends State<MainLauncherScreen> {
         (_repoCurrent?.file.key == file.key ? _repoCurrent : null);
     if (pending != null) return pending.done.future;
 
-    if (!mounted || !await _ensureGameFolder()) return false;
+    final isModels = file.type == ModFileType.models;
+    if (!isModels && (!mounted || !await _ensureGameFolder())) return false;
+    final targetRoot = isModels ? await _modelsDownloadDir() : _downloadDir!;
 
-    var fullOutputPath = AddonPaths.target(_downloadDir!, mod, file);
+    var fullOutputPath = AddonPaths.target(targetRoot, mod, file);
     if (!overwrite && await File(fullOutputPath).exists()) {
       final existing = await _md5For(fullOutputPath);
       if (existing != null && (file.md5.isEmpty || existing == file.md5)) {
+        if (isModels) {
+          final importError = await _importModelsFromFile(mod, file, fullOutputPath);
+          await _checkModFilesStatus(mod);
+          if (mounted) {
+            showSnack(
+              context,
+              SnackBar(
+                content: Text(importError == null
+                    ? tr('Models for "{name}" imported!', {'name': mod.name})
+                    : tr('Failed to import models: {error}', {'error': importError})),
+                backgroundColor: importError == null ? Colors.green : Colors.red,
+              ),
+            );
+          }
+          return importError == null;
+        }
         await _checkModFilesStatus(mod);
         return true; // уже скачан
       }
@@ -3851,10 +3927,10 @@ class _MainLauncherScreenState extends State<MainLauncherScreen> {
     try {
       await downloadDir.create(recursive: true);
     } on FileSystemException catch (e) {
-      // Например, игра лежит в C:\Program Files без прав администратора.
+      // Например, папка недоступна для записи.
       if (mounted) {
         await _showProblem(
-          title: tr('Cannot write to the game folder'),
+          title: isModels ? tr('Cannot write to folder') : tr('Cannot write to the game folder'),
           message: tr('Could not create\n{path}\n\n{error}\n\nChoose a game folder you have write access to.', {'path': downloadDir.path, 'error': e.osError?.message ?? e.message}),
           error: true,
         );
@@ -3993,14 +4069,12 @@ class _MainLauncherScreenState extends State<MainLauncherScreen> {
       await _rememberMd5(fullOutputPath, file.md5);
     }
 
-    if (success && file.type == ModFileType.models && _game.models != null) {
-      try {
-        final lib = await ModelLibrary.load(_game);
-        await lib.add(fullOutputPath, name: '${mod.name} ${file.version}'.trim());
-      } catch (e) {
-        AppLog.console('Failed to import models from $fullOutputPath: $e');
-      }
-    } else if (success && file.type.isBuild) {
+    var overallSuccess = success;
+    String? importError;
+    if (overallSuccess && file.type == ModFileType.models) {
+      importError = await _importModelsFromFile(mod, file, fullOutputPath);
+      if (importError != null) overallSuccess = false;
+    } else if (overallSuccess && file.type.isBuild) {
       try {
         final installDir = Directory(p.dirname(fullOutputPath));
         String? exePath;
@@ -4033,7 +4107,7 @@ class _MainLauncherScreenState extends State<MainLauncherScreen> {
       }
     }
 
-    if (success && selectedMod != null) {
+    if (overallSuccess && selectedMod != null) {
       await _checkModFilesStatus(selectedMod!);
       // Очередь переходит на скачанную выбранную версию.
       if (mounted && identical(selectedMod, mod)) _syncQueueToVersion(mod);
@@ -4045,15 +4119,18 @@ class _MainLauncherScreenState extends State<MainLauncherScreen> {
           : (file.type == ModFileType.models
               ? tr('Models for "{name}" imported!', {'name': mod.name})
               : tr('File {name} successfully downloaded!', {'name': fileName}));
+      final errorMsg = importError != null
+          ? tr('Failed to import models: {error}', {'error': importError})
+          : tr('Error downloading {name}.', {'name': fileName});
       showSnack(context, 
         SnackBar(
-          content: Text(success ? successMsg : tr('Error downloading {name}.', {'name': fileName})),
-          backgroundColor: success ? Colors.green : Colors.red,
+          content: Text(overallSuccess ? successMsg : errorMsg),
+          backgroundColor: overallSuccess ? Colors.green : Colors.red,
         ),
       );
     }
-    if (success) _refreshDownloaded();
-    return success;
+    if (overallSuccess && file.type == ModFileType.addon) _refreshDownloaded();
+    return overallSuccess;
   }
 
   Widget _tabButton(BuildContext context, int index, String label) {

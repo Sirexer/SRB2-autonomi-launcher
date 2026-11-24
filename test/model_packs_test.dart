@@ -328,4 +328,64 @@ void main() {
       zip.close();
     }
   });
+
+  test('nested zip folders, backslashes, and sourceKey persistence work', () async {
+    final zip = File(p.join(tmp.path, 'PEPPERMODELS-v1.12.zip'))
+      ..writeAsBytesSync(buildZip([
+        (r'PEPPERMODELS-v1.12\PEPPERMODELS\models.dat', utf8.encode('SONIC PLAY/SONIC.md3 2.0 0.0\r\n')),
+        (r'PEPPERMODELS-v1.12\PEPPERMODELS\models\PLAY\SONIC.md3', utf8.encode('md3')),
+        (r'PEPPERMODELS-v1.12\PEPPERMODELS\models\PLAY\SONIC.png', utf8.encode('tex')),
+      ]));
+    final lib = await ModelLibrary.load(Games.srb2);
+    final pack = await lib.add(zip.path, name: 'Paper Models 1.12', sourceKey: 'mod:key:1');
+    expect(pack.models.length, 1);
+    expect(pack.models.single.hasModel, isTrue);
+    expect(pack.models.single.hasTexture, isTrue);
+    expect(pack.sourceKey, 'mod:key:1');
+    expect((await ModelLibrary.load(Games.srb2)).packs.single.sourceKey, 'mod:key:1');
+  });
+
+  test('falls back to README txt and supports multiple versions inside one pack', () async {
+    final zip = File(p.join(tmp.path, 'PEPPER-txt.zip'))
+      ..writeAsBytesSync(buildZip([
+        (
+          'Read Please!.txt',
+          utf8.encode(
+            'SONIC PEPPERMODELS/PREVIEW/SONIC.md3 2.5 0.0\r\n'
+            'TSWP PEPPERMODELS/PREVIEW/BATTLE/TSWP.md3 2.5 0.0\r\n'
+            '------------- Put these into your models.dat file -------------\r\n'
+            ' PEPPERMODELS/BONUS/SONIC.md3 2.4 0.0\r\n',
+          ),
+        ),
+        ('PEPPERMODELS/PREVIEW/SONIC.md3', utf8.encode('md3-sonic-preview')),
+        ('PEPPERMODELS/PREVIEW/SONIC.png', utf8.encode('png-sonic')),
+        ('PEPPERMODELS/SONIC.md3', utf8.encode('md3-sonic-main')),
+        ('PEPPERMODELS/BONUS/SONIC.md3', utf8.encode('md3-sonic-bonus')),
+        ('PEPPERMODELS/PREVIEW/BATTLE/TSWP.md3', utf8.encode('md3-tswp')),
+      ]));
+    final lib = await ModelLibrary.load(Games.srb2);
+    final pack = await lib.add(zip.path);
+
+    // SONIC должен получить 3 версии внутри одного пака (основная PREVIEW — первая/выбранная).
+    final choices = lib.choices();
+    final sonic = choices.firstWhere((c) => c.key == 'SONIC');
+    expect(sonic.conflict, isTrue);
+    expect(sonic.chosen!.$2.line.path, 'PEPPERMODELS/PREVIEW/SONIC.md3');
+    expect(sonic.candidates.map((c) => c.$2.line.path).toSet(), {
+      'PEPPERMODELS/PREVIEW/SONIC.md3',
+      'PEPPERMODELS/SONIC.md3',
+      'PEPPERMODELS/BONUS/SONIC.md3',
+    });
+
+    // Пользователь выбирает бонусную версию внутри того же пака — выбор сохраняется и попадает в сборку.
+    await lib.choose('SONIC', '${pack.id}|PEPPERMODELS/BONUS/SONIC.md3');
+    final reloaded = await ModelLibrary.load(Games.srb2);
+    final chosenBonus = reloaded.choices().firstWhere((c) => c.key == 'SONIC');
+    expect(chosenBonus.manual, isTrue);
+    expect(chosenBonus.chosen!.$2.line.path, 'PEPPERMODELS/BONUS/SONIC.md3');
+
+    // Сборка автоматически укорачивает путь длиннее ModelFormat.pathMax (31).
+    final build = reloaded.build();
+    expect(build.lines.any((l) => l.key == 'TSWP' && l.path.length <= ModelFormat.pathMax), isTrue);
+  });
 }

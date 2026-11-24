@@ -84,7 +84,8 @@ class ModelPickOff extends ModelPick {
 
 class ModelPickPack extends ModelPick {
   final String packId;
-  const ModelPickPack(this.packId);
+  final String? modelPath;
+  const ModelPickPack(this.packId, [this.modelPath]);
 }
 
 /// Окно модели: 3D-вид, анимации, цвет игрока; справа — версии из наборов.
@@ -113,7 +114,11 @@ class _ModelPreviewState extends State<_ModelPreview> {
   /// Какая версия на экране (номер в candidates).
   late int _shown = () {
     final chosen = widget.choice.chosen;
-    final i = chosen == null ? 0 : widget.choice.candidates.indexWhere((c) => c.$1.id == chosen.$1.id);
+    final i = chosen == null
+        ? 0
+        : widget.choice.candidates.indexWhere(
+            (c) => c.$1.id == chosen.$1.id && c.$2.line.path.toLowerCase() == chosen.$2.line.path.toLowerCase(),
+          );
     return i < 0 ? 0 : i;
   }();
 
@@ -416,7 +421,9 @@ class _ModelPreviewState extends State<_ModelPreview> {
                         for (var i = 0; i < choice.candidates.length; i++)
                           () {
                             final (cp, cm) = choice.candidates[i];
-                            final inUse = choice.chosen?.$1.id == cp.id;
+                            final inUse = choice.chosen != null &&
+                                choice.chosen!.$1.id == cp.id &&
+                                choice.chosen!.$2.line.path.toLowerCase() == cm.line.path.toLowerCase();
                             return Card(
                               margin: const EdgeInsets.only(bottom: 6),
                               color: i == _shown ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.18) : null,
@@ -447,7 +454,7 @@ class _ModelPreviewState extends State<_ModelPreview> {
                   FilledButton.icon(
                     icon: const Icon(Icons.check, size: 18),
                     label: Text(tr('Use this version')),
-                    onPressed: () => Navigator.pop(context, ModelPickPack(pack.id)),
+                    onPressed: () => Navigator.pop(context, ModelPickPack(pack.id, m.line.path)),
                   ),
                   const SizedBox(height: 6),
                   OutlinedButton(

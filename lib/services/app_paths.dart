@@ -127,6 +127,14 @@ class AppPaths {
     await dir.create(recursive: true);
     return dir;
   }
+
+  /// Папка для скачанных архивов наборов 3D-моделей (`user_data/models` или `%APPDATA%/.../models`).
+  static Future<Directory> modelsDir() async {
+    final support = (await getApplicationSupportDirectory()).path;
+    final dir = Directory(p.join(support, 'models'));
+    await dir.create(recursive: true);
+    return dir;
+  }
 }
 
 /// Папки path_provider в портативном режиме: данные и кэш — в [dir], прочее

@@ -1249,5 +1249,7 @@
   "Missing": "Falta",
   "Replays": "Repeticiones",
   "A Replays tab for Sonic Robo Blast 2: browse recorded .lmp replays, import or download them into SRB2AL-Replays, inspect maps, characters and required addons, and play them back.": "Pestaña Repeticiones para Sonic Robo Blast 2: explora repeticiones .lmp grabadas, impórtalas o descárgalas en SRB2AL-Replays, revisa mapas, personajes y addons necesarios, y reprodúcelas.",
-  "Play with another build": "Iniciar con otra compilación"
+  "Play with another build": "Iniciar con otra compilación",
+  "Failed to import models: {error}": "No se pudieron importar los modelos: {error}",
+  "{game}: 3D models are not supported": "{game}: no admite modelos 3D"
 }
