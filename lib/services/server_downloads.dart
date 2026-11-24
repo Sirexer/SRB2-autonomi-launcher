@@ -163,6 +163,13 @@ class ServerDownloads extends ChangeNotifier {
                     outputFilePath: savedTo,
                     expectedMd5: f.md5,
                     expectedSize: f.size,
+                    onStage: (stage) => center.update(item, stage: stage),
+                    onChunks: (done, total) {
+                      center.update(item, chunksDone: done, chunksTotal: total);
+                      if (total > 0) {
+                        progress((done / total).clamp(0.0, 0.99).toDouble());
+                      }
+                    },
                     onProgress: (value, _, _) => progress(value),
                   );
                   if (!done) throw TransferException(tr('Download from the repository failed'));

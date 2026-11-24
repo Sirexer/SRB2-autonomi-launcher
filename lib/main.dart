@@ -3755,9 +3755,11 @@ class _MainLauncherScreenState extends State<MainLauncherScreen> {
       expectedMd5: file.md5,
       expectedSize: file.size,
       onStage: (stage) {
+        DownloadCenter.instance.update(item, stage: stage);
         if (mounted) setState(() => downloadStage = stage);
       },
       onChunks: (done, total) {
+        DownloadCenter.instance.update(item, chunksDone: done, chunksTotal: total);
         if (mounted) {
           setState(() {
             chunksDone = done;

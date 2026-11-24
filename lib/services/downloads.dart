@@ -19,6 +19,13 @@ class DownloadItem {
   DownloadState state = DownloadState.running;
   String? error;
 
+  /// Сколько чанков загружено и сколько всего (для Autonomi).
+  int chunksDone = 0;
+  int chunksTotal = 0;
+
+  /// Текущий этап ('downloading', 'verifying' и т.п.)
+  String stage = '';
+
   /// Отмена (null — отменить нельзя: начатые загрузки Autonomi не прерываются,
   /// но ждущие в очереди убираются).
   VoidCallback? cancel;
@@ -73,16 +80,36 @@ class DownloadCenter extends ChangeNotifier {
     notifyListeners();
   }
 
-  void update(DownloadItem item, {double? progress, String? source}) {
-    if (progress != null) item.progress = progress;
+  void update(
+    DownloadItem item, {
+    double? progress,
+    String? source,
+    int? chunksDone,
+    int? chunksTotal,
+    String? stage,
+  }) {
     if (source != null) item.source = source;
+    if (chunksDone != null) item.chunksDone = chunksDone;
+    if (chunksTotal != null) item.chunksTotal = chunksTotal;
+    if (stage != null) item.stage = stage;
+    if (progress == 1.0) {
+      item.progress = 1.0;
+      if (item.chunksTotal > 0) item.chunksDone = item.chunksTotal;
+    } else if (item.chunksTotal > 0) {
+      item.progress = (item.chunksDone / item.chunksTotal).clamp(0.0, 0.99).toDouble();
+    } else if (progress != null) {
+      item.progress = progress;
+    }
     notifyListeners();
   }
 
   void finish(DownloadItem item, DownloadState state, {String? error}) {
     item.state = state;
     item.error = error;
-    if (state == DownloadState.done) item.progress = 1;
+    if (state == DownloadState.done) {
+      item.progress = 1;
+      if (item.chunksTotal > 0) item.chunksDone = item.chunksTotal;
+    }
     notifyListeners();
   }
 

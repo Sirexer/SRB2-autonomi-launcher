@@ -24,4 +24,33 @@ void main() {
     expect(center.activeCount, 0);
     center.items.clear();
   });
+
+  test('chunk progress calculates progress and updates item chunks', () {
+    final center = DownloadCenter.instance;
+    center.items.clear();
+    final item = center.start('mod.pk3', 'Repo — Mod');
+    center.update(item, progress: 0.0);
+    expect(item.progress, 0.0);
+
+    center.update(item, chunksDone: 3, chunksTotal: 10);
+    expect(item.chunksDone, 3);
+    expect(item.chunksTotal, 10);
+    expect(item.progress, closeTo(0.3, 0.001));
+    expect(center.activeProgress, closeTo(0.3, 0.001));
+
+    // Subsequent byte progress call does not overwrite chunk progress
+    center.update(item, progress: 0.0);
+    expect(item.progress, closeTo(0.3, 0.001));
+
+    // Stage update
+    center.update(item, stage: 'verifying');
+    expect(item.stage, 'verifying');
+
+    // Finish sets progress to 1 and chunksDone to chunksTotal
+    center.finish(item, DownloadState.done);
+    expect(item.progress, 1.0);
+    expect(item.chunksDone, 10);
+    expect(item.state, DownloadState.done);
+    center.items.clear();
+  });
 }

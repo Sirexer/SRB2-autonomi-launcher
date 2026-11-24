@@ -113,8 +113,15 @@ class _DownloadsDialog extends StatelessWidget {
           Icons.downloading,
           Theme.of(context).colorScheme.primary,
           [
-            item.source.isEmpty ? tr('Downloading...') : tr('Downloading from {source}...', {'source': item.source}),
-            if (item.progress != null) '${(item.progress! * 100).toStringAsFixed(0)}%',
+            if (item.stage == 'verifying')
+              tr('Verifying MD5...')
+            else ...[
+              item.source.isEmpty ? tr('Downloading...') : tr('Downloading from {source}...', {'source': item.source}),
+              if (item.chunksTotal > 0)
+                '${item.chunksDone}/${item.chunksTotal} chunks'
+              else if (item.progress != null && item.progress! > 0)
+                '${(item.progress! * 100).toStringAsFixed(0)}%',
+            ],
           ].join(' '),
         ),
       DownloadState.done => (Icons.check_circle_outline, Colors.green, tr('Downloaded')),
@@ -134,7 +141,10 @@ class _DownloadsDialog extends StatelessWidget {
           if (item.state == DownloadState.running)
             Padding(
               padding: const EdgeInsets.only(top: 4),
-              child: LinearProgressIndicator(value: item.progress, minHeight: 3),
+              child: LinearProgressIndicator(
+                value: item.stage == 'verifying' ? null : item.progress,
+                minHeight: 3,
+              ),
             ),
         ],
       ),
