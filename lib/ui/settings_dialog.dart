@@ -22,6 +22,7 @@ import 'game_icon.dart';
 import '../services/hidden_addon_folders.dart';
 import 'games_settings.dart';
 import 'launch_panel.dart';
+import 'models_settings.dart';
 import 'snack.dart';
 import 'theme_editor.dart';
 import '../theme/app_themes.dart';
@@ -39,7 +40,7 @@ enum TagOrder { alphabetical, groups }
 typedef TagDisplay = ({bool showGroup, TagOrder order, bool showAll});
 
 /// Разделы настроек.
-enum SettingsSection { general, games, game, addons, launch, servers, experimental }
+enum SettingsSection { general, games, game, addons, launch, servers, models, experimental }
 
 /// Окно настроек: разделы слева, содержимое справа. Изменения применяются сразу.
 class SettingsDialog extends StatefulWidget {
@@ -204,6 +205,7 @@ class _SettingsDialogState extends State<SettingsDialog> {
     (SettingsSection.game, Icons.folder_outlined, 'Game folder'),
     (SettingsSection.launch, Icons.play_circle_outline, 'Launch'),
     (SettingsSection.servers, Icons.dns_outlined, 'Servers'),
+    (SettingsSection.models, Icons.view_in_ar_outlined, 'Models'),
   ];
   static const _sections = [..._common, ..._perGame];
 
@@ -393,6 +395,8 @@ class _SettingsDialogState extends State<SettingsDialog> {
         return _launch();
       case SettingsSection.servers:
         return _page([_servers()]);
+      case SettingsSection.models:
+        return _page([ModelsSettings(game: _g, gameFolder: _gameFolder, launch: _launchSettings)]);
       case SettingsSection.experimental:
         return _page([_experimental()]);
     }

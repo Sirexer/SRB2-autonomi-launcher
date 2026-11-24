@@ -44,7 +44,8 @@ parameters.
 - **Warp to map** — a map set means `-warp`, empty means a normal start. The
   button next to it opens the map picker; a map's "⋮" menu lists gametypes and
   **Singleplayer** (when the map is good for single player: it removes
-  `-gametype` and turns off hosting).
+  `-gametype` and turns off hosting). The gametype chips above the maps show
+  only the maps of the chosen gametypes (any of them); none chosen — all maps.
 - **Encore** (SRB2Kart, Ring Racers) — mirrored track with the Encore palette
   (`+kartencore On` / `+encore On`), Race only (also Versus in Ring Racers).
 - **Gear** (SRB2Kart `+kartspeed`, Ring Racers `+gamespeed`) and **Bots**
@@ -61,7 +62,10 @@ parameters.
 
 The `+skin` picker shows the characters of the game and of the queued add-ons
 with their icon, portrait and the description from the character select menu
-(with SRB2 colors).
+(with SRB2 colors). In SRB2Kart, Ring Racers and BlanKart each character also
+shows its speed and weight (`kartspeed`, `kartweight` from S_SKIN, 1–9; 5 if
+not set) and a 9×9 grid like the game's: speed left to right, weight top to
+bottom. The same stats are in the tooltips and on the add-on page.
 
 - The icon is the character's badge (`XTRAC0` in SRB2, `facerank`/`facewant`
   in SRB2Kart, `face` in SRB2 Legacy, `XTRAB0` in Ring Racers); the portrait

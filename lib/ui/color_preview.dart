@@ -31,6 +31,9 @@ class ColorPreview extends StatelessWidget {
         );
       });
 
+  /// Палитра SRB2 из образца — запасная, если в файлах игры её нет.
+  static Future<Uint8List> builtInPalette() async => (await _load()).$5;
+
   @override
   Widget build(BuildContext context) {
     return FutureBuilder(

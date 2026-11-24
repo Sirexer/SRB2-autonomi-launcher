@@ -1,7 +1,11 @@
 import 'dart:io';
 
+import '../services/characters.dart' show BuiltInSonic;
+import 'model_format.dart';
 import 'skin_colors_data.dart';
 import 'srb2_server.dart';
+
+export 'model_format.dart';
 
 /// Как получать список серверов с мастер-сервера.
 enum MasterApi {
@@ -106,6 +110,11 @@ class GameDef {
   /// Описание своей игры, как оно пришло в JSON (для экспорта).
   final Map<String, dynamic>? definition;
 
+  /// Формат 3D-моделей своей игры (`"models"` в JSON), если он задан
+  /// ([hasModelsOverride]); иначе — по [engine]. Смотрите [models].
+  final ModelFormat? modelsOverride;
+  final bool hasModelsOverride;
+
   const GameDef({
     required this.id,
     required this.name,
@@ -138,7 +147,12 @@ class GameDef {
     this.baseAddons = false,
     this.customOwnFiles = const [],
     this.definition,
+    this.modelsOverride,
+    this.hasModelsOverride = false,
   });
+
+  /// Как игра читает 3D-модели; null — модели не поддерживаются.
+  ModelFormat? get models => hasModelsOverride ? modelsOverride : ModelFormat.forEngine(engine);
 
   /// Своя игра (из JSON), а не встроенная.
   bool get isCustom => engineId.isNotEmpty;
@@ -205,6 +219,9 @@ class GameDef {
   /// маленькая иконка.
   bool get pickerPortraits => engine == 'srb2legacy';
 
+  /// У персонажей есть статы карта (скорость и вес, S_SKIN kartspeed/kartweight).
+  bool get kartStats => engine == 'srb2kart' || engine == 'drrr';
+
   /// У Соника, Тейлза и Наклза описания из кода SRB2 (меню выбора персонажа).
   bool get vanillaSkinDescriptions => engine == 'srb2' || engine == 'srb2legacy';
 
@@ -212,8 +229,13 @@ class GameDef {
   /// 2.1 (Legacy) её нет.
   bool get hasHttpSource => engine != 'srb2legacy';
 
-  /// SRB2 2.1 (Legacy): Соник задан в коде игры, а не в S_SKIN.
-  bool get builtInSonic => engine == 'srb2legacy';
+  /// Соник задан в коде игры, а не в S_SKIN: SRB2 2.1 (Legacy) и SRB2Kart
+  /// (и его форки, например BlanKart).
+  BuiltInSonic get builtInSonic => switch (engine) {
+        'srb2legacy' => BuiltInSonic.legacy,
+        'srb2kart' => BuiltInSonic.kart,
+        _ => BuiltInSonic.none,
+      };
 
   /// Вкладка Progress по gamedata.dat: SRB2 2.2, Legacy (форк 2.1) и
   /// SRB2Kart (kartdata.dat). У Ring Racers — своя вкладка (ringdata.dat).
@@ -547,6 +569,12 @@ class Games {
     final windows = exeList('windows') ?? base.windowsExecutables;
     final linux = exeList('linux') ?? base.linuxExecutables;
     final download = list('download_path');
+    final ModelFormat? models;
+    try {
+      models = ModelFormat.fromJson(j['models'], ModelFormat.forEngine(base.id));
+    } on FormatException catch (e) {
+      throw FormatException('$id: ${e.message}');
+    }
     int intOf(String k, int fallback) => j[k] is num ? (j[k] as num).toInt() : int.tryParse('${j[k] ?? ''}') ?? fallback;
     return GameDef(
       id: id,
@@ -582,6 +610,8 @@ class Games {
       baseAddons: j['base_addons'] == true,
       customOwnFiles: list('own_files') ?? const [],
       definition: Map<String, dynamic>.from(j),
+      modelsOverride: models,
+      hasModelsOverride: j.containsKey('models'),
     );
   }
 

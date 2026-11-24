@@ -1371,6 +1371,7 @@ class _ServersTabState extends State<ServersTab> {
               extra: [?guessNote],
               // Описание мешает в списке игроков — только имя (в Аддонах и Запуске — полностью).
               description: false,
+              kartStats: game.kartStats,
               Opacity(
                 opacity: pl.isSpectator ? 0.5 : 1,
                 // Цвет игрока сервер не присылает: в командах — цвет команды,

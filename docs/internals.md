@@ -77,6 +77,19 @@ The DB-IP Lite database (CC BY 4.0) is built into
 ranges and country codes; lookup is a binary search, addresses are not sent
 anywhere.
 
+## Palettes
+
+A picture is drawn with the last loaded `PLAYPAL`; inside one file the game
+takes the first lump with the name (`W_CheckNumForNamePwad`). BlanKart has two
+palettes: its own in `main.pk3/Palette/PLAYPAL.pal` and the old SRB2Kart one.
+Files in its compatibility mode (`d_main`: `srb2.srb`, `gfx.kart`,
+`textures.kart`, `chars.kart`, `maps.kart`, `bonuschars.kart`; add-ons: a WAD
+`*.kart` or a file named `K…`) are drawn in the old palette and their colors
+are translated with the `PALREMAP` table (`MakePatch` →
+`R_DoPaletteRemapPatch`). `PaletteResolver` (`map_preview.dart`) does the same
+when the game files have `PALREMAP` — only BlanKart has it — so maps,
+character icons and emblems get the palette of the file they come from.
+
 ## Characters
 
 Characters are found like the game does (`R_AddSkins`): a character starts at
@@ -168,6 +181,46 @@ end; save slots also by the `version N` line and the `0x1d` end marker). The
 `GameData` found in a file is cached until the file changes. Copies are in
 `save_backups/<game>-<folder code>/`, damaged files in `save_backups/Damaged`.
 
+## 3D models
+
+`lib/services/model_packs.dart`, `model_mesh.dart`; Settings → Models
+(`lib/ui/models_settings.dart`, preview: `model_preview_dialog.dart`,
+`model_viewer.dart`).
+
+- **Formats** (`ModelFormat`, from `hw_md2.c` of each game): SRB2 Legacy
+  (2.1) `md2.dat`/`md2/`, `%19s`, no `PLAYER`, MD2 only, home folder only; SRB2
+  `models.dat`/`models/`, name `%25s`; SRB2Kart `mdls.dat`/`mdls/`, `%19s`, no
+  `PLAYER` prefix; Ring Racers `%23s`; BlanKart reads `models.dat`, then
+  `blanmodels.dat`. A path is `%31s` everywhere. The list is read by
+  `fscanf("%Ns %31s %f %f") == 4` — the first bad line stops reading
+  (`ModelDat.parse` does the same and reports where). The game looks in its
+  home folder first, then next to the executable: the launcher's game folder
+  is the home/working folder.
+- **Textures**: `<model path without extension>.png` (or `.pcx`); for player
+  colors `_blend.png`. Without a PNG the game maps the object's sprite on the
+  model (`adjustTextureCoords`).
+- **Library**: `model_packs/<game>/<pack>/pack.json` + `files/` (only files
+  from the list, spelled as in the list); `setup.json` — order, disabled
+  packs, manual choices. In a pack the last line with a name wins (as in the
+  game).
+- **Build**: the chosen version of each name; the path is kept, a clash with
+  another pack's file goes to `P<n>/…`, a too long path to `P<n>/<file>` or
+  `P<n>/M<k>.md3`. Install: files are copied to `<folder>.srb2al-new`, the old
+  folder and list are renamed into `<folder>.srb2al-backups/<date>/`, then the
+  new ones are renamed into place (five backups kept); a mark
+  `.srb2al-models.json` in the folder says the launcher put it there.
+- **Mirroring**: the game turns model vertices into GL as (x, z, −y) and puts
+  the world in as (x, z, y) (`DrawModelEx`; 2.1 converts MD2 the same way in
+  `md2_readModel`), so in the game a model is mirrored compared to its file;
+  the preview negates Y too.
+- **Preview**: MD3 (vertices ×1/64, frames by name: `SPR2_STND+i00` → STND,
+  `SUPER…`) and MD2 (each triangle corner is its own vertex); drawn by
+  `rasterizeModel` (`model_raster.dart`) with a depth test per pixel, like
+  the game's OpenGL — sorting whole triangles hid small details such as
+  pupils; texels under half alpha are skipped; a textured model is not shaded
+  (colors as in the file), an untextured one gets flat light per face. Player color —
+  `blendSkinColor`, a port of `HWR_CreateBlendedTexture` (regular colors).
+
 ## Launcher updates
 
 - The release list comes from the GitHub API (`/repos/…/releases`); if it
@@ -230,5 +283,6 @@ session bus). `--new-instance` skips it.
 | `themes/` | Your themes |
 | `games/` | Icons of custom games |
 | `save_backups/` | Save copies |
+| `model_packs/` | Model packs (Settings → Models) |
 | `logs/launcher.log` | Log |
 | `antd/` | Autonomi daemon |

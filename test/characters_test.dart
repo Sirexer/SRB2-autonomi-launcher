@@ -4,6 +4,7 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
+import 'package:srb2_autonomi_launcher/models/game.dart';
 import 'package:srb2_autonomi_launcher/services/characters.dart';
 import 'package:srb2_autonomi_launcher/services/map_preview.dart';
 
@@ -69,6 +70,86 @@ void main() {
     expect(chars[1].icon, fakePng);
     expect(chars[2].icon!.last, 7);
     expect(chars[2].file, addon);
+  });
+
+  test('kart stats: kartspeed and kartweight 1..9 like GETKARTSTAT; missing — none', () async {
+    final path = p.join(dir.path, 'karts.pk3');
+    await File(path).writeAsBytes(buildZip([
+      ('skins/a/S_SKIN', ascii.encode('name = fast\nkartspeed = 8\nkartweight = 2\n')),
+      ('skins/b/S_SKIN', ascii.encode('name = odd\nkartspeed = 12\nkartweight = 0\n')),
+      ('skins/c/S_SKIN', ascii.encode('name = plain\n')),
+    ]));
+    final chars = CharacterScanner.scanAll([path], const []);
+    expect([for (final c in chars) (c.name, c.kartSpeed, c.kartWeight)], [
+      ('fast', 8, 2),
+      ('odd', 9, 1),
+      ('plain', null, null),
+    ]);
+    expect((Games.srb2kart.kartStats, Games.drrr.kartStats, Games.srb2.kartStats), (true, true, false));
+  });
+
+  test('SRB2Kart/BlanKart: Sonic from the game code, P_SKIN patches, faces from other files, renamed repeats',
+      () async {
+    final chars = p.join(dir.path, 'chars.kart');
+    await File(chars).writeAsBytes(buildZip([
+      ('PLAYWANT.png', fakePng),
+      ('KNUXWANT.png', [0x89, 0x50, 0x4E, 0x47, 9]),
+    ]));
+    final main = p.join(dir.path, 'main.pk3');
+    await File(main).writeAsBytes(buildZip([
+      ('Skins/knuckles/S_SKIN', ascii.encode('name = knuckles\nfacewant = KNUXWANT\nkartspeed = 5\nkartweight = 5\n')),
+      ('Skins/P_SKIN', ascii.encode('name = sonic\nrealname = Classic_Sonic\nkartspeed = 9\n')),
+      ('Skins/again/S_SKIN', ascii.encode('name = knuckles\n')),
+    ]));
+    final list = CharacterScanner.scanAll([chars, main], const [], builtInSonic: BuiltInSonic.kart);
+    expect([for (final c in list) (c.name, c.realname, c.kartSpeed, c.kartWeight)], [
+      ('sonic', 'Classic Sonic', 9, 2), // из кода (8/2), P_SKIN поменял имя и скорость
+      ('knuckles', 'knuckles', 5, 5),
+      ('knuckles2', 'knuckles', null, null), // повтор имени — «имя+номер»
+    ]);
+    expect(list[0].icon, fakePng); // PLAYWANT из chars.kart
+    expect(list[1].icon!.last, 9); // facewant из другого файла
+    expect((Games.srb2kart.builtInSonic, Games.drrr.builtInSonic), (BuiltInSonic.kart, BuiltInSonic.none));
+  });
+
+  test('palette: the first PLAYPAL inside a file, like the game (W_CheckNumForNamePwad)', () async {
+    final path = p.join(dir.path, 'main.pk3');
+    final first = List<int>.generate(768, (i) => 1);
+    final second = List<int>.generate(768, (i) => 2);
+    await File(path).writeAsBytes(buildZip([
+      ('Palette/PLAYPAL.pal', first),
+      ('Compat/PLAYPAL.pal', second),
+    ]));
+    final a = AddonArchive.open(path)!;
+    try {
+      expect(MapScanner.findPalette([a], const [])!.first, 1);
+    } finally {
+      a.close();
+    }
+  });
+
+  test('BlanKart palettes: compat files (srb2.srb, *.kart, K*) get PALREMAP, the others the main palette', () async {
+    // Основная палитра: цвет i = (i, 0, 0); PALREMAP: i → 255 - i.
+    final pal = [for (var i = 0; i < 256; i++) ...[i, 0, 0]];
+    final remap = [for (var i = 0; i < 256; i++) 255 - i];
+    final main = p.join(dir.path, 'main.pk3');
+    await File(main).writeAsBytes(buildZip([
+      ('Palette/PLAYPAL.pal', pal),
+      ('PALREMAP.lmp', remap),
+      ('INVREMAP.lmp', remap),
+    ]));
+    final r = PaletteResolver(const [], [main]);
+    expect(r.forFile(p.join(dir.path, 'main.pk3'))!.sublist(0, 6), [0, 0, 0, 1, 0, 0]);
+    for (final name in ['chars.kart', 'srb2.srb', 'KC_supermitpack.pk3', 'kl_track.wad']) {
+      expect(r.forFile(p.join(dir.path, name))!.sublist(0, 6), [255, 0, 0, 254, 0, 0], reason: name);
+    }
+    for (final name in ['mappatch.pk3', 'DRL_RR_Fixes.pk3', 'chars.pk3']) {
+      expect(r.forFile(p.join(dir.path, name))!.sublist(0, 3), [0, 0, 0], reason: name);
+    }
+    // Без PALREMAP (SRB2, SRB2Kart, Ring Racers) — одна палитра на всё.
+    final plain = p.join(dir.path, 'srb2.pk3');
+    await File(plain).writeAsBytes(buildZip([('Palette/PLAYPAL.pal', pal)]));
+    expect(PaletteResolver(const [], [plain]).forFile(p.join(dir.path, 'chars.kart'))!.sublist(0, 3), [0, 0, 0]);
   });
 
   test('PK3: sprites outside the S_SKIN folder are taken in archive order, as the game does', () async {
@@ -187,12 +268,12 @@ void main() {
       ('TAILA1', [0]),
       ('S_END', []),
     ]));
-    final chars = CharacterScanner.scanAll([path], const [], startColor: 160, builtInSonic: true);
+    final chars = CharacterScanner.scanAll([path], const [], startColor: 160, builtInSonic: BuiltInSonic.legacy);
     expect(chars.map((c) => c.name), ['sonic', 'tails']);
     expect(chars[0].realname, 'Sonic');
     expect(chars.every((c) => c.icon != null && c.portrait != null), isTrue);
     final described = CharacterScanner.scanAll([path], const [],
-        startColor: 160, builtInSonic: true, baseDescriptions: CharacterScanner.vanillaDescriptions);
+        startColor: 160, builtInSonic: BuiltInSonic.legacy, baseDescriptions: CharacterScanner.vanillaDescriptions);
     expect(described[0].description, contains('fastest of the three'));
     expect(described[1].description, contains('most mobile'));
     // Без builtInSonic (SRB2 2.2) Соника из кода нет.

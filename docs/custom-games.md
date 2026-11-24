@@ -42,6 +42,7 @@ One game is an object; several are a list or `{"games": [...]}`:
       "full_name": "SRB2Kart: BlanKart",
       "base": "srb2kart",
       "version": "2.0",
+      "models": { "file": "models.dat", "folder": "models", "name_max": 25, "player_prefix": true, "extra_files": ["blanmodels.dat"] },
       "protocol": { "base": "ringracers", "packet_version": 2, "...": "see below" },
       "master_api": "kart",
       "masters": ["https://ms.blankart.cc/MS/1"],
@@ -91,6 +92,7 @@ Optional (the base game's value is used without them):
 | `picture_inside_maps` | Map pictures are inside the map files. |
 | `base_addons` | `true` — show the base game's add-ons too (the fork loads them). |
 | `own_files` | The game's own files with add-on extensions (`.pk3`) — they are not listed under In the game folder. |
+| `models` | How the game reads 3D models (Settings → Models): `file` — the list (`models.dat`), `folder` — the models folder, `name_max` — the longest name the game reads, `player_prefix` — whether `PLAYERNAME` means a skin, `extra_files` — lists the game reads after `file` (their lines win), `md3` — whether the game reads MD3 (`false`: MD2 only). Missing keys come from the base game; `false` — no models. |
 
 Errors in a definition (a missing field, an unknown base or protocol) are
 shown in the game picker — such a game cannot be added; the others in the

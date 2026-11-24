@@ -1025,7 +1025,7 @@ class _LaunchOptionsPanelState extends State<LaunchOptionsPanel> {
                         tooltip: tr('Choose a character'),
                         onPressed: () async {
                           final skin = await showCharacterPicker(context, widget.loadCharacters!(),
-                              current: _cvar('skin'), portraits: s.game.pickerPortraits);
+                              current: _cvar('skin'), portraits: s.game.pickerPortraits, kartStats: s.game.kartStats);
                           if (skin == null || !mounted) return;
                           _setCvar('skin', skin);
                           setState(() => _quickRev++);

@@ -778,23 +778,27 @@ class ProgressData {
   /// Значки эмблем: GOTITx в цвете эмблемы (как R_GetTranslationColormap
   /// TC_DEFAULT: индексы 96–111 — ramp цвета), NEEDIT и EMBLICON как есть.
   static Map<String, Uint8List> _icons(List<AddonArchive> archives, ProgressDefs defs, List<String> files) {
-    final palette = MapScanner.findPalette(archives, files);
+    // Палитра — файла картинки (у BlanKart файлы режима совместимости
+    // перекрашиваются, см. PaletteResolver).
+    final palettes = PaletteResolver(archives, files);
     final out = <String, Uint8List>{};
-    if (palette == null) return out;
-    Uint8List? lump(String name) {
+    if (palettes.master == null) return out;
+    (Uint8List, String)? lump(String name) {
       for (final a in archives.reversed) {
         final e = a.find(name);
         if (e == null) continue;
         try {
-          return a.read(e);
+          return (a.read(e), a.path);
         } catch (_) {}
       }
       return null;
     }
 
     Uint8List? draw(String name, List<int>? ramp) {
-      final data = lump(name);
-      if (data == null) return null;
+      final found = lump(name);
+      if (found == null) return null;
+      final (data, from) = found;
+      final palette = palettes.forFile(from) ?? palettes.master!;
       // PNG (у некоторых аддонов значки свои) — как есть, без перекраски.
       if (data.length > 8 && data[0] == 0x89 && data[1] == 0x50 && data[2] == 0x4E && data[3] == 0x47) return data;
       final indexed = MapScanner.decodePatchIndexed(data);

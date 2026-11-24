@@ -4,6 +4,10 @@ import 'dart:typed_data';
 
 import 'map_preview.dart';
 
+/// Соник, заданный в коде игры (R_InitSkins), а не в S_SKIN: SRB2 2.1
+/// (Legacy) и SRB2Kart (там же BlanKart, который дописывает его P_SKIN).
+enum BuiltInSonic { none, legacy, kart }
+
 /// Цвет персонажа: имя и 16 индексов палитры.
 typedef SkinColor = (String, List<int>);
 
@@ -37,6 +41,10 @@ class CharacterInfo {
   /// `Character`, SOC_PLAY); '' — нет. Может содержать цвета SRB2.
   final String description;
 
+  /// Статы карта из S_SKIN (`kartspeed`, `kartweight`, 1–9; SRB2Kart, Ring
+  /// Racers, BlanKart); null — не указаны (игра берёт 5).
+  final int? kartSpeed, kartWeight;
+
   // Иконка в индексах палитры — для перекраски в другие цвета (команды).
   final int _w, _h;
   final Uint8List? _pixels, _mask, _palette;
@@ -48,6 +56,8 @@ class CharacterInfo {
       this.prefRamp,
       this.startColor = 96,
       this.description = '',
+      this.kartSpeed,
+      this.kartWeight,
       int w = 0,
       int h = 0,
       Uint8List? pixels,
@@ -61,6 +71,21 @@ class CharacterInfo {
 
   /// Иконка в цвете [ramp] (например, красная команда). PNG-иконки и иконки
   /// без палитры не перекрашиваются — тогда [icon].
+  /// Тот же персонаж под другим именем скина.
+  CharacterInfo _renamed(String newName) => CharacterInfo(newName, realname, icon, file,
+      portrait: portrait,
+      prefColor: prefColor,
+      prefRamp: prefRamp,
+      startColor: startColor,
+      description: description,
+      kartSpeed: kartSpeed,
+      kartWeight: kartWeight,
+      w: _w,
+      h: _h,
+      pixels: _pixels,
+      mask: _mask,
+      palette: _palette);
+
   Uint8List? iconWithRamp(List<int>? ramp) {
     if (ramp == null || _pixels == null || _palette == null) return icon;
     return _recolored.putIfAbsent(ramp.join(','),
@@ -113,7 +138,7 @@ class CharacterScanner {
           int startColor = 96,
           String iconFrames = 'C',
           bool portraits = true,
-          bool builtInSonic = false,
+          BuiltInSonic builtInSonic = BuiltInSonic.none,
           Map<String, String> baseDescriptions = const {}}) =>
       Isolate.run(() => scanAll(files, paletteFiles,
           colors: colors,
@@ -128,30 +153,25 @@ class CharacterScanner {
   /// [colors] — встроенные цвета игры; [startColor] — startcolor по умолчанию.
   /// [iconFrames] — кадры `XTRA` для иконки по порядку предпочтения ('C' у
   /// SRB2, 'BAC' у Ring Racers); [portraits] — искать портрет XTRAB0 (в SRB2
-  /// он уже в цветах персонажа, в Ring Racers — нет); [builtInSonic] — SRB2
-  /// 2.1, где Соник задан в коде игры, а не в S_SKIN; [baseDescriptions] —
+  /// он уже в цветах персонажа, в Ring Racers — нет); [builtInSonic] — Соник
+  /// из кода игры (SRB2 2.1, SRB2Kart), а не из S_SKIN; [baseDescriptions] —
   /// описания по умолчанию (скин → текст), SOC их заменяет.
   static List<CharacterInfo> scanAll(List<String> files, List<String> paletteFiles,
       {List<SkinColor> colors = const [],
       int startColor = 96,
       String iconFrames = 'C',
       bool portraits = true,
-      bool builtInSonic = false,
+      BuiltInSonic builtInSonic = BuiltInSonic.none,
       Map<String, String> baseDescriptions = const {}}) {
     final archives = <(String, AddonArchive)>[
       for (final f in files)
         if (AddonArchive.open(f) case final a?) (f, a),
     ];
     try {
-      Uint8List? palette;
-      var searched = false;
-      Uint8List? paletteOnce() {
-        if (!searched) {
-          searched = true;
-          palette = MapScanner.findPalette([for (final a in archives) a.$2], paletteFiles);
-        }
-        return palette;
-      }
+      // Палитра на файл: у BlanKart файлы режима совместимости — со своей
+      // перекраской (PaletteResolver).
+      final palettes = PaletteResolver([for (final a in archives) a.$2], paletteFiles);
+      final paletteOf = palettes.forFile;
 
       // Свои цвета и описания из всех файлов (персонаж может брать цвет из
       // другого аддона, описание тоже бывает в отдельном файле).
@@ -175,21 +195,43 @@ class CharacterScanner {
       final out = <CharacterInfo>[];
       // SRB2 2.1: Соник (скин 0) задан в коде игры (R_InitSkins), S_SKIN у
       // него нет — только спрайты и LIVSONIC / CHRSONIC в player.dta.
-      if (builtInSonic) {
+      if (builtInSonic == BuiltInSonic.legacy) {
         for (final (path, a) in archives) {
           final face = a.find('LIVSONIC');
           if (face == null) continue;
           final portrait = portraits ? _findIn(archives, picNames['sonic'] ?? 'CHRSONIC', prefer: a) : null;
           final icon = (a, face, false);
           out.add(_character('sonic', 'Sonic', path, icon,
-              portrait == null ? (portraits ? icon : null) : (portrait.$1, portrait.$2, false), paletteOnce,
+              portrait == null ? (portraits ? icon : null) : (portrait.$1, portrait.$2, false), paletteOf,
               startColor, 'Blue', findColor(all, 'Blue'), descriptions['sonic'] ?? ''));
           break;
         }
       }
+      // SRB2Kart: скин 0 — Соник из кода: лица PLAYWANT/PLAYRANK, Blue,
+      // скорость 8, вес 2. BlanKart создаёт его пустым перед chars.kart и
+      // дописывает P_SKIN (ниже).
+      if (builtInSonic == BuiltInSonic.kart) {
+        final face = _findIn(archives, 'PLAYWANT') ?? _findIn(archives, 'PLAYRANK');
+        final from = face == null ? null : archives.where((x) => identical(x.$2, face.$1)).firstOrNull?.$1;
+        final icon = face == null ? null : (face.$1, face.$2, false);
+        out.add(_character('sonic', 'Sonic', from ?? (archives.isEmpty ? '' : archives.first.$1), icon,
+            portraits ? icon : null, paletteOf, startColor, 'Blue', findColor(all, 'Blue'), descriptions['sonic'] ?? '',
+            kartSpeed: 8, kartWeight: 2));
+      }
       for (final (path, a) in archives) {
-        out.addAll(_skinsIn(path, a, paletteOnce, all, startColor, descriptions, iconFrames, portraits,
-            (name) => _findIn(archives, name, prefer: a), picNames));
+        for (final c in _skinsIn(path, a, paletteOf, all, startColor, descriptions, iconFrames, portraits,
+            (name) => _findIn(archives, name, prefer: a), picNames)) {
+          // Имя занято — игра называет скин «имя+номер» (sonic5), если и
+          // оно занято — оставляет «skin».
+          if (out.any((x) => x.name == c.name)) {
+            final alt = '${c.name}${out.length}';
+            out.add(c._renamed(out.any((x) => x.name == alt) ? 'skin' : alt));
+          } else {
+            out.add(c);
+          }
+        }
+        // P_SKIN — правки уже загруженных скинов (R_PatchSkins, после S_SKIN файла).
+        _patchSkins(a, out, archives, all, paletteOf);
       }
       return out;
     } finally {
@@ -237,7 +279,7 @@ class CharacterScanner {
 
   static bool _isMarker(String name, String prefix) => name.length >= 6 && name.startsWith(prefix);
 
-  static List<CharacterInfo> _skinsIn(String path, AddonArchive a, Uint8List? Function() palette,
+  static List<CharacterInfo> _skinsIn(String path, AddonArchive a, Uint8List? Function(String file) palette,
       List<SkinColor> colors, int defaultStart, Map<String, String> descriptions, String iconFrames, bool portraits,
       [(AddonArchive, ArchiveEntry)? Function(String lump)? findAnywhere, Map<String, String> picNames = const {}]) {
     final out = <CharacterInfo>[];
@@ -268,14 +310,24 @@ class CharacterScanner {
 
       final sprites = _spritesOf(entries, i, skinsInFolder);
 
-      ArchiveEntry? iconLump;
-      // SRB2Kart: facewant/facerank/facemmap; SRB2 2.1 (Legacy): face.
+      (AddonArchive, ArchiveEntry)? iconLump;
+      // SRB2Kart: facewant/facerank/facemmap; SRB2 2.1 (Legacy): face. Игра
+      // ищет их во всех загруженных файлах (BlanKart: S_SKIN в main.pk3,
+      // картинки — в chars.kart), сначала — в своём.
       for (final key in ['facewant', 'facerank', 'facemmap', 'face']) {
         final lump = fields[key];
-        if (lump != null && lump.isNotEmpty) iconLump ??= a.find(lump.toUpperCase());
+        if (lump == null || lump.isEmpty || iconLump != null) continue;
+        final up = lump.toUpperCase();
+        if (a.find(up) case final e?) {
+          iconLump = (a, e);
+        } else {
+          iconLump = findAnywhere?.call(up);
+        }
       }
       for (final frame in iconFrames.split('')) {
-        iconLump ??= _xtraFrame(sprites, frame);
+        if (iconLump == null) {
+          if (_xtraFrame(sprites, frame) case final e?) iconLump = (a, e);
+        }
       }
 
       // Портрет — как есть, без перекраски. 2.1: PicName из SOC_PLAY, затем
@@ -296,7 +348,7 @@ class CharacterScanner {
       }
       // Нет одной из картинок — берётся другая; нет обеих — спрайт стоящего
       // персонажа STNDA2 (у STNDA8 — отражённый: так он смотрит как A2).
-      (AddonArchive, ArchiveEntry, bool)? icon = iconLump == null ? null : (a, iconLump, false);
+      (AddonArchive, ArchiveEntry, bool)? icon = iconLump == null ? null : (iconLump.$1, iconLump.$2, false);
       (AddonArchive, ArchiveEntry, bool)? face = portrait == null ? null : (portrait.$1, portrait.$2, false);
       icon ??= face;
       if (portraits) face ??= icon;
@@ -306,20 +358,92 @@ class CharacterScanner {
           if (portraits) face = icon;
         }
       }
-      out.add(_character(name, realname, path, icon, face, palette, start, pref, ramp, descriptions[name] ?? ''));
+      out.add(_character(name, realname, path, icon, face, palette, start, pref, ramp, descriptions[name] ?? '',
+          kartSpeed: _kartStat(fields, 'kartspeed'), kartWeight: _kartStat(fields, 'kartweight')));
     }
     return out;
+  }
+
+  /// Стат карта из S_SKIN как GETKARTSTAT в игре: atoi и 1..9; null — нет.
+  static int? _kartStat(Map<String, String> fields, String key) {
+    final v = fields[key];
+    if (v == null) return null;
+    return (int.tryParse(RegExp(r'^\s*[+-]?\d+').stringMatch(v)?.trim() ?? '') ?? 0).clamp(1, 9);
+  }
+
+  /// P_SKIN файла [a]: дописывает поля уже загруженных скинов по `name`
+  /// (R_PatchSkins). Лица ищутся во всех файлах, цвет — среди [colors].
+  static void _patchSkins(AddonArchive a, List<CharacterInfo> out, List<(String, AddonArchive)> archives,
+      List<SkinColor> colors, Uint8List? Function(String file) palette) {
+    for (final e in a.entries) {
+      if (!_isMarker(e.name, 'P_SKIN')) continue;
+      Map<String, String> fields;
+      try {
+        fields = parseSkin(latin1.decode(a.read(e), allowInvalid: true));
+      } catch (_) {
+        continue;
+      }
+      final name = (fields['name'] ?? '').toLowerCase();
+      final i = out.lastIndexWhere((c) => c.name == name);
+      if (name.isEmpty || i < 0) continue;
+      final c = out[i];
+      final realname = fields['realname']?.replaceAll('_', ' ') ?? c.realname;
+      final pref = fields['prefcolor'] ?? c.prefColor;
+      final ramp = fields.containsKey('prefcolor') ? findColor(colors, pref) : c.prefRamp;
+      final start = int.tryParse(fields['startcolor'] ?? '') ?? c.startColor;
+      final speed = _kartStat(fields, 'kartspeed') ?? c.kartSpeed;
+      final weight = _kartStat(fields, 'kartweight') ?? c.kartWeight;
+      (AddonArchive, ArchiveEntry)? face;
+      for (final key in ['facewant', 'facerank', 'facemmap', 'face']) {
+        final lump = fields[key];
+        if (lump != null && lump.isNotEmpty) face ??= _findIn(archives, lump.toUpperCase(), prefer: a);
+      }
+      if (face != null) {
+        final fresh = _character(c.name, realname, c.file, (face.$1, face.$2, false), null, palette, start, pref, ramp,
+            c.description,
+            kartSpeed: speed, kartWeight: weight);
+        out[i] = CharacterInfo(c.name, realname, fresh.icon, c.file,
+            portrait: c.portrait ?? fresh.icon,
+            prefColor: pref,
+            prefRamp: ramp,
+            startColor: start,
+            description: c.description,
+            kartSpeed: speed,
+            kartWeight: weight,
+            w: fresh._w,
+            h: fresh._h,
+            pixels: fresh._pixels,
+            mask: fresh._mask,
+            palette: fresh._palette);
+      } else {
+        out[i] = CharacterInfo(c.name, realname, ramp == c.prefRamp ? c.icon : c.iconWithRamp(ramp), c.file,
+            portrait: c.portrait,
+            prefColor: pref,
+            prefRamp: ramp,
+            startColor: start,
+            description: c.description,
+            kartSpeed: speed,
+            kartWeight: weight,
+            w: c._w,
+            h: c._h,
+            pixels: c._pixels,
+            mask: c._mask,
+            palette: c._palette);
+      }
+    }
   }
 
   /// Персонаж: иконка [iconLump] в цвете [ramp] (перекрашивается и потом),
   /// портрет [portraitLump] как есть.
   static CharacterInfo _character(String name, String realname, String path,
       (AddonArchive, ArchiveEntry, bool)? iconLump, (AddonArchive, ArchiveEntry, bool)? portraitLump,
-      Uint8List? Function() palette, int start, String pref, List<int>? ramp, String description) {
+      Uint8List? Function(String file) palette, int start, String pref, List<int>? ramp, String description,
+      {int? kartSpeed, int? kartWeight}) {
     Uint8List? portrait;
     if (portraitLump != null) {
       try {
-        portrait = iconFromLump(portraitLump.$1.read(portraitLump.$2), palette, flip: portraitLump.$3);
+        portrait = iconFromLump(portraitLump.$1.read(portraitLump.$2), () => palette(portraitLump.$1.path),
+            flip: portraitLump.$3);
       } catch (_) {
         portrait = null;
       }
@@ -335,7 +459,8 @@ class CharacterScanner {
         } else {
           indexed = MapScanner.decodePatchIndexed(data);
           if (indexed != null && iconLump.$3) indexed = flipped(indexed);
-          pal = palette();
+          // Палитра — файла, где лежит картинка (BlanKart: режим совместимости).
+          pal = palette(iconLump.$1.path);
           if (indexed != null && pal != null) {
             icon = render(indexed.$1, indexed.$2, indexed.$3, indexed.$4, pal, start, ramp);
           }
@@ -350,6 +475,8 @@ class CharacterScanner {
         prefRamp: ramp,
         startColor: start,
         description: description,
+        kartSpeed: kartSpeed,
+        kartWeight: kartWeight,
         w: indexed?.$1 ?? 0,
         h: indexed?.$2 ?? 0,
         pixels: pal == null ? null : indexed?.$3,

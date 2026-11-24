@@ -4,10 +4,65 @@ import '../i18n.dart';
 import '../services/characters.dart';
 import 'srb2_text.dart';
 
+/// Скорость и вес персонажа (как в игре: не указаны — 5).
+(int, int) kartStatsOf(CharacterInfo c) => (c.kartSpeed ?? 5, c.kartWeight ?? 5);
+
+/// «Скорость 5 · Вес 3».
+String kartStatsText(CharacterInfo c) {
+  final (speed, weight) = kartStatsOf(c);
+  return tr('Speed {speed} · Weight {weight}', {'speed': '$speed', 'weight': '$weight'});
+}
+
+/// Сетка статов 9×9, как в меню выбора персонажа в игре: скорость — слева
+/// направо, вес — сверху вниз; точка — персонаж.
+class KartStatsGrid extends StatelessWidget {
+  final int speed, weight;
+  final double size;
+  const KartStatsGrid(this.speed, this.weight, {super.key, this.size = 36});
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = Theme.of(context).colorScheme.primary;
+    return CustomPaint(size: Size.square(size), painter: _StatsGridPainter(speed, weight, accent));
+  }
+}
+
+class _StatsGridPainter extends CustomPainter {
+  final int speed, weight;
+  final Color accent;
+  _StatsGridPainter(this.speed, this.weight, this.accent);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final cell = size.width / 9;
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(Offset.zero & size, const Radius.circular(3)),
+      Paint()..color = Colors.black45,
+    );
+    final dot = Paint()..color = Colors.white24;
+    for (var x = 0; x < 9; x++) {
+      for (var y = 0; y < 9; y++) {
+        canvas.drawCircle(Offset((x + 0.5) * cell, (y + 0.5) * cell), cell * 0.16, dot);
+      }
+    }
+    final at = Offset((speed.clamp(1, 9) - 0.5) * cell, (weight.clamp(1, 9) - 0.5) * cell);
+    // Строка и столбец персонажа — подсветкой, точка — заметно крупнее сетки.
+    final band = Paint()..color = accent.withValues(alpha: 0.18);
+    canvas.drawRect(Rect.fromLTWH(0, at.dy - cell / 2, size.width, cell), band);
+    canvas.drawRect(Rect.fromLTWH(at.dx - cell / 2, 0, cell, size.height), band);
+    canvas.drawCircle(at, cell * 1.0, Paint()..color = Colors.white);
+    canvas.drawCircle(at, cell * 0.75, Paint()..color = accent);
+  }
+
+  @override
+  bool shouldRepaint(_StatsGridPainter old) => old.speed != speed || old.weight != weight || old.accent != accent;
+}
+
 /// Подсказка персонажа: имя, строки [extra] и описание из меню выбора
-/// персонажа (PlayerText из SOC, с цветами SRB2).
+/// персонажа (PlayerText из SOC, с цветами SRB2). [kartStats] — строка со
+/// скоростью и весом (игры-карты).
 Widget characterTooltip(CharacterInfo? character, Widget child,
-    {List<String> extra = const [], String? fallback, bool description = true}) {
+    {List<String> extra = const [], String? fallback, bool description = true, bool kartStats = false}) {
   if (character == null) {
     return fallback == null || fallback.isEmpty ? child : Tooltip(message: fallback, child: child);
   }
@@ -29,6 +84,7 @@ Widget characterTooltip(CharacterInfo? character, Widget child,
         text: '${character.realname} (${character.name})',
         style: const TextStyle(fontWeight: FontWeight.bold),
       ),
+      if (kartStats) TextSpan(text: '\n${kartStatsText(character)}'),
       for (final line in extra) TextSpan(text: '\n$line'),
       if (text.isNotEmpty) ...[
         const TextSpan(text: '\n\n'),
@@ -74,15 +130,17 @@ class CharacterIcon extends StatelessWidget {
 /// Выбор персонажа для `+skin`: персонажи игры и аддонов из очереди.
 /// Возвращает имя скина.
 /// [portraits] — показывать портреты (charsel), а не иконки.
+/// [kartStats] — скорость и вес на плитках (игры-карты).
 Future<String?> showCharacterPicker(BuildContext context, Future<List<CharacterInfo>> characters,
-        {String? current, bool portraits = false}) =>
-    showDialog<String>(context: context, builder: (_) => _CharacterPickerDialog(characters, current, portraits));
+        {String? current, bool portraits = false, bool kartStats = false}) =>
+    showDialog<String>(
+        context: context, builder: (_) => _CharacterPickerDialog(characters, current, portraits, kartStats));
 
 class _CharacterPickerDialog extends StatefulWidget {
   final Future<List<CharacterInfo>> characters;
   final String? current;
-  final bool portraits;
-  const _CharacterPickerDialog(this.characters, this.current, this.portraits);
+  final bool portraits, kartStats;
+  const _CharacterPickerDialog(this.characters, this.current, this.portraits, this.kartStats);
 
   @override
   State<_CharacterPickerDialog> createState() => _CharacterPickerDialogState();
@@ -160,9 +218,9 @@ class _CharacterPickerDialogState extends State<_CharacterPickerDialog> {
                                 ),
                               )
                             : GridView.builder(
-                                gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                                gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
                                   maxCrossAxisExtent: 130,
-                                  mainAxisExtent: 130,
+                                  mainAxisExtent: widget.kartStats ? 150 : 130,
                                   crossAxisSpacing: 8,
                                   mainAxisSpacing: 8,
                                 ),
@@ -170,7 +228,7 @@ class _CharacterPickerDialogState extends State<_CharacterPickerDialog> {
                                 itemBuilder: (context, i) {
                                   final c = shown[i];
                                   final selected = widget.current?.trim().toLowerCase() == c.name;
-                                  return characterTooltip(c, Card(
+                                  return characterTooltip(c, kartStats: widget.kartStats, Card(
                                     margin: EdgeInsets.zero,
                                     shape: RoundedRectangleBorder(
                                       borderRadius: BorderRadius.circular(8),
@@ -194,6 +252,7 @@ class _CharacterPickerDialogState extends State<_CharacterPickerDialog> {
                                                 maxLines: 1,
                                                 overflow: TextOverflow.ellipsis,
                                                 style: const TextStyle(fontSize: 11, color: Colors.grey)),
+                                            if (widget.kartStats) KartStatsLine(c),
                                           ],
                                         ),
                                       ),
@@ -212,6 +271,46 @@ class _CharacterPickerDialogState extends State<_CharacterPickerDialog> {
             },
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// Строка под именем: значки скорости и веса с числами и мини-сетка.
+class KartStatsLine extends StatelessWidget {
+  final CharacterInfo character;
+  const KartStatsLine(this.character, {super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final (speed, weight) = kartStatsOf(character);
+    const style = TextStyle(fontSize: 11, fontWeight: FontWeight.w600);
+    return Padding(
+      padding: const EdgeInsets.only(top: 4),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Tooltip(
+            message: tr('Speed'),
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              const Icon(Icons.speed, size: 13),
+              const SizedBox(width: 2),
+              Text('$speed', style: style),
+            ]),
+          ),
+          const SizedBox(width: 8),
+          Tooltip(
+            message: tr('Weight'),
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              const Icon(Icons.fitness_center, size: 13),
+              const SizedBox(width: 2),
+              Text('$weight', style: style),
+            ]),
+          ),
+          const SizedBox(width: 8),
+          KartStatsGrid(speed, weight, size: 27),
+        ],
       ),
     );
   }

@@ -4766,6 +4766,7 @@ class _MainLauncherScreenState extends State<MainLauncherScreen> {
                   for (final c in chars)
                     characterTooltip(
                       c,
+                      kartStats: _game.kartStats,
                       extra: [
                         tr('Play as {name}: adds the file to the launch queue and sets +skin {skin}',
                             {'name': c.realname, 'skin': c.name}),
@@ -4797,6 +4798,7 @@ class _MainLauncherScreenState extends State<MainLauncherScreen> {
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: const TextStyle(fontSize: 11, color: Colors.grey)),
+                            if (_game.kartStats) KartStatsLine(c),
                           ],
                         ),
                       ),

@@ -68,7 +68,7 @@ flutter analyze
 | Языки | `lang/` | CMake (`install(DIRECTORY ../lang)`) |
 | Темы | `themes/` | CMake (`install(DIRECTORY ../themes)`) |
 | Репозиторий по умолчанию | `packaging/pointer.txt` | скрипты сборки и CI |
-| Свои игры (BlanKart) | `packaging/another_games.json` | скрипты сборки и CI |
+| Свои игры (BlanKart) | `packaging/another_games.json` | CMake (любой `flutter build`), скрипты сборки и CI |
 | Указание авторства данных | `packaging/NOTICE.txt` | скрипты сборки и CI |
 | Демон Autonomi | релиз [ant-sdk](https://github.com/WithAutonomi/ant-sdk) | `packaging/fetch_antd.sh`, скрипт Windows |
 | Страны серверов | база DB-IP Lite | `tools/build_geoip.py` → `assets/geoip/country.bin` |

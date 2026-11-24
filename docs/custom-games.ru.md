@@ -41,6 +41,7 @@ SRB2Kart). Своя игра описывается в JSON; поведение 
       "full_name": "SRB2Kart: BlanKart",
       "base": "srb2kart",
       "version": "2.0",
+      "models": { "file": "models.dat", "folder": "models", "name_max": 25, "player_prefix": true, "extra_files": ["blanmodels.dat"] },
       "protocol": { "base": "ringracers", "packet_version": 2, "...": "см. ниже" },
       "master_api": "kart",
       "masters": ["https://ms.blankart.cc/MS/1"],
@@ -90,6 +91,7 @@ SRB2Kart). Своя игра описывается в JSON; поведение 
 | `picture_inside_maps` | Картинки карт лежат внутри файлов карт. |
 | `base_addons` | `true` — показывать и аддоны основы (форк их загружает). |
 | `own_files` | Файлы самой игры с расширением аддонов (`.pk3`) — их нет в списке «В папке игры». |
+| `models` | Как игра читает 3D-модели (Настройки → Модели): `file` — список (`models.dat`), `folder` — папка моделей, `name_max` — самое длинное имя, которое читает игра, `player_prefix` — значит ли `PLAYERИМЯ` скин, `extra_files` — списки, которые игра читает после `file` (их строки главнее), `md3` — читает ли игра MD3 (`false` — только MD2). Чего нет — берётся у основы; `false` — моделей нет. |
 
 Ошибки в описании (нет поля, неизвестная основа или протокол) показываются
 в окне выбора игр — такую игру добавить нельзя, остальные из файла можно.

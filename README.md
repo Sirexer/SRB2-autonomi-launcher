@@ -35,6 +35,9 @@ Platforms: **Windows x64**, **Linux x86_64** (AppImage) and **Linux ARM64**
   like the game's Statistics.
 - **Save protection** (experimental) — a whole copy of every save, restored if
   the file gets damaged.
+- **3D models** — several model packs put together into one: pick the
+  version of each model in a 3D preview, install to the game with a backup
+  and roll back, or save as `.zip`.
 - **Themes** — colors, background pictures, fonts, corners, window opacity.
 - **Updates** — new releases are offered and installed by the launcher.
 - Six languages: English, Russian, Ukrainian, German, Spanish, Portuguese.

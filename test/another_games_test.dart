@@ -12,6 +12,9 @@ void main() {
     final games = [for (final d in defs) Games.fromDefinition(d)];
     final blan = games.single;
     expect((blan.id, blan.name, blan.engine, blan.isCustom), ('srb2blankart', 'BlanKart', 'srb2kart', true));
+    // Палитра BlanKart — своя, в main.pk3 (Palette/PLAYPAL.pal): он первым.
+    expect(blan.paletteFiles.first, 'main.pk3');
+    expect((blan.models!.datFile, blan.kartStats), ('models.dat', true));
     // Протокол описан в файле целиком — совпадает со встроенным.
     expect(defs.single['protocol'], isA<Map>());
     final p = blan.protocol, b = NetProtocol.blankart;

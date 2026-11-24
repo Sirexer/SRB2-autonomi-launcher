@@ -82,6 +82,9 @@ class _MapPickerDialogState extends State<_MapPickerDialog> {
   final _search = TextEditingController();
   bool _showHidden = false;
 
+  /// Режимы фильтра (строчными); пусто — показываются все карты.
+  final Set<String> _types = {};
+
   @override
   void dispose() {
     _search.dispose();
@@ -94,6 +97,7 @@ class _MapPickerDialogState extends State<_MapPickerDialog> {
       for (final m in all)
         if (!m.isTitleMap &&
             (_showHidden || !m.hidden) &&
+            (_types.isEmpty || m.types.any((t) => _types.contains(t.toLowerCase()))) &&
             (q.isEmpty ||
                 m.map.toLowerCase().contains(q) ||
                 srb2PlainTitle(m.title).toLowerCase().contains(q) ||
@@ -117,6 +121,15 @@ class _MapPickerDialogState extends State<_MapPickerDialog> {
               final all = snap.data;
               final hiddenCount = all?.where((m) => m.hidden && !m.isTitleMap).length ?? 0;
               final shown = all == null ? const <MapPreview>[] : _filter(all);
+              // Режимы карт для фильтра: чаще встречающиеся — первыми.
+              final typeCounts = <String, int>{};
+              for (final m in all ?? const <MapPreview>[]) {
+                if (m.isTitleMap || (!_showHidden && m.hidden)) continue;
+                for (final t in {for (final t in m.types) t.toLowerCase()}) {
+                  typeCounts[t] = (typeCounts[t] ?? 0) + 1;
+                }
+              }
+              final typeList = typeCounts.keys.toList()..sort((a, b) => typeCounts[b]!.compareTo(typeCounts[a]!));
               return Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
@@ -148,6 +161,30 @@ class _MapPickerDialogState extends State<_MapPickerDialog> {
                       value: _showHidden,
                       onChanged: (v) => setState(() => _showHidden = v ?? false),
                       title: Text(tr('Show hidden levels ({n})', {'n': hiddenCount})),
+                    ),
+                  if (typeList.length > 1)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: Wrap(
+                        spacing: 6,
+                        runSpacing: 6,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          Text(tr('Gametype:'), style: const TextStyle(fontSize: 13, color: Colors.grey)),
+                          for (final t in typeList)
+                            FilterChip(
+                              visualDensity: VisualDensity.compact,
+                              label: Text('$t (${typeCounts[t]})'),
+                              selected: _types.contains(t),
+                              onSelected: (v) => setState(() => v ? _types.add(t) : _types.remove(t)),
+                            ),
+                          if (_types.isNotEmpty)
+                            TextButton(
+                              onPressed: () => setState(_types.clear),
+                              child: Text(tr('All gametypes')),
+                            ),
+                        ],
+                      ),
                     ),
                   const SizedBox(height: 8),
                   Expanded(

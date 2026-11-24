@@ -105,6 +105,12 @@ install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/../lang"
 install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/../themes"
   DESTINATION "${CMAKE_INSTALL_PREFIX}" COMPONENT Runtime)
 
+# Custom games (BlanKart…), next to the executable: the launcher updates the
+# definitions it has from this file at start, so a plain `flutter build`
+# must ship the current one too.
+install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/../packaging/another_games.json"
+  DESTINATION "${CMAKE_INSTALL_PREFIX}" COMPONENT Runtime)
+
 # Window icon, loaded by runner/my_application.cc from data/ next to the binary.
 install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/../packaging/linux/srb2al.png"
   DESTINATION "${INSTALL_BUNDLE_DATA_DIR}" COMPONENT Runtime)

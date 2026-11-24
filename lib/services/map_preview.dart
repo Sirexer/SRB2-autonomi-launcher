@@ -46,7 +46,10 @@ class AddonArchive {
   final List<ArchiveEntry> entries;
   final bool isZip;
 
-  AddonArchive._(this._file, this._bytes, this.entries, this.isZip);
+  /// Путь файла ('' — вложенный WAD из PK3, тогда путь PK3).
+  final String path;
+
+  AddonArchive._(this._file, this._bytes, this.entries, this.isZip, [this.path = '']);
 
   /// null — не WAD и не PK3 (или файл повреждён).
   static AddonArchive? open(String path) {
@@ -55,11 +58,11 @@ class AddonArchive {
       f = File(path).openSync();
       final head = f.readSync(4);
       if (head.length == 4 && _isWadMagic(head)) {
-        return AddonArchive._(f, null, _readWadDirectory(f, null), false);
+        return AddonArchive._(f, null, _readWadDirectory(f, null), false, path);
       }
       if (head.length == 4 && head[0] == 0x50 && head[1] == 0x4B) {
         final entries = _readZipDirectory(f);
-        if (entries != null) return AddonArchive._(f, null, entries, true);
+        if (entries != null) return AddonArchive._(f, null, entries, true, path);
       }
       f.closeSync();
     } catch (_) {
@@ -71,10 +74,10 @@ class AddonArchive {
   }
 
   /// WAD, уже прочитанный в память (карта Maps/*.wad из PK3).
-  static AddonArchive? fromWadBytes(Uint8List bytes, RandomAccessFile parent) {
+  static AddonArchive? fromWadBytes(Uint8List bytes, RandomAccessFile parent, [String path = '']) {
     if (bytes.length < 12 || !_isWadMagic(bytes)) return null;
     try {
-      return AddonArchive._(parent, bytes, _readWadDirectory(null, bytes), false);
+      return AddonArchive._(parent, bytes, _readWadDirectory(null, bytes), false, path);
     } catch (_) {
       return null;
     }
@@ -311,6 +314,15 @@ class AddonArchive {
     return found;
   }
 
+  /// Первая запись с именем [name] — так ищет игра (W_CheckNumForNamePwad
+  /// идёт по файлу с начала; среди файлов — последний загруженный).
+  ArchiveEntry? findFirst(String name) {
+    for (final e in entries) {
+      if (e.name == name) return e;
+    }
+    return null;
+  }
+
   void close() {
     if (_bytes != null) return; // файл принадлежит родительскому архиву
     try {
@@ -382,6 +394,101 @@ class SocInfo {
   }
 }
 
+/// Палитра для картинок файла. Обычно — последняя загруженная PLAYPAL. У
+/// BlanKart (в файлах игры есть лампа PALREMAP) файлы «режима совместимости»
+/// (srb2.srb и *.kart игры, у аддонов — WAD *.kart и файлы на «K») нарисованы
+/// в старой палитре SRB2Kart: игра переводит их цвета таблицей PALREMAP в
+/// цвета своей палитры (w_wad.c MakePatch → R_DoPaletteRemapPatch), так же и
+/// здесь. Без PALREMAP (SRB2, SRB2Kart, Ring Racers) — одна палитра на всё.
+class PaletteResolver {
+  /// Где искать: открытые файлы (последний важнее), затем [files] по порядку.
+  final List<AddonArchive> archives;
+  final List<String> files;
+  PaletteResolver(this.archives, this.files);
+
+  bool _searched = false;
+  Uint8List? _master;
+  bool _masterCompat = false;
+  Uint8List? _palRemap, _invRemap;
+  final Map<bool, Uint8List?> _byCompat = {};
+
+  /// Первая (по правилам игры) лампа [name] не короче [min] байт и откуда.
+  (Uint8List, String)? _lump(String name, int min) {
+    for (final a in archives.reversed) {
+      final e = a.findFirst(name);
+      if (e == null) continue;
+      try {
+        final d = a.read(e);
+        if (d.length >= min) return (Uint8List.fromList(d.sublist(0, min)), a.path);
+      } catch (_) {}
+    }
+    for (final path in files) {
+      final x = AddonArchive.open(path);
+      if (x == null) continue;
+      try {
+        final e = x.findFirst(name);
+        if (e == null) continue;
+        final d = x.read(e);
+        if (d.length >= min) return (Uint8List.fromList(d.sublist(0, min)), path);
+      } catch (_) {
+        // следующий файл
+      } finally {
+        x.close();
+      }
+    }
+    return null;
+  }
+
+  void _search() {
+    if (_searched) return;
+    _searched = true;
+    final master = _lump('PLAYPAL', 768);
+    _master = master?.$1;
+    _palRemap = _lump('PALREMAP', 256)?.$1;
+    if (_palRemap != null) {
+      _invRemap = _lump('INVREMAP', 256)?.$1;
+      if (master != null) _masterCompat = isCompatFile(master.$2);
+    }
+  }
+
+  /// Файл режима совместимости BlanKart (d_main: основные файлы; w_wad.c:
+  /// CheckCompatFilename / CheckCompatExtension для остальных).
+  static bool isCompatFile(String path) {
+    final name = path.replaceAll('\\', '/').split('/').last.toLowerCase();
+    if (name.isEmpty) return false;
+    if (name.endsWith('.kart') || name == 'srb2.srb') return true;
+    if (name.endsWith('.pk3') && !name.startsWith('k')) return false;
+    return name.startsWith('k');
+  }
+
+  /// Основная палитра (последняя PLAYPAL).
+  Uint8List? get master {
+    _search();
+    return _master;
+  }
+
+  /// Палитра для картинок из файла [path].
+  Uint8List? forFile(String path) {
+    _search();
+    final m = _master;
+    if (m == null || _palRemap == null || path.isEmpty) return m;
+    final compat = isCompatFile(path);
+    if (compat == _masterCompat) return m;
+    return _byCompat.putIfAbsent(compat, () {
+      final table = compat ? _palRemap : _invRemap;
+      if (table == null) return m;
+      final out = Uint8List(768);
+      for (var i = 0; i < 256; i++) {
+        final j = table[i];
+        out[i * 3] = m[j * 3];
+        out[i * 3 + 1] = m[j * 3 + 1];
+        out[i * 3 + 2] = m[j * 3 + 2];
+      }
+      return out;
+    });
+  }
+}
+
 /// Поиск уровней и их картинок в WAD/PK3.
 ///
 /// - SRB2, SRB2Kart: карта — lump MAPxx (MAP01–MAP99, MAPA0–MAPZZ), картинка —
@@ -408,8 +515,8 @@ class MapScanner {
       if (maps.isEmpty) return const [];
       final soc = _readSoc(archive);
       final titles = soc.titles;
-      Uint8List? palette;
-      Uint8List? paletteOnce() => palette ??= _palette(archive, paletteFiles);
+      final palettes = PaletteResolver([archive], paletteFiles);
+      Uint8List? paletteOnce() => palettes.forFile(path);
 
       final result = <MapPreview>[];
       for (final entry in maps.entries) {
@@ -464,21 +571,7 @@ class MapScanner {
         }
       }
 
-      Uint8List? palette;
-      var paletteSearched = false;
-      Uint8List? paletteOnce() {
-        if (paletteSearched) return palette;
-        paletteSearched = true;
-        for (final a in archives.reversed) {
-          final e = a.find('PLAYPAL');
-          if (e == null) continue;
-          try {
-            final d = a.read(e);
-            if (d.length >= 768) return palette = Uint8List.fromList(d.sublist(0, 768));
-          } catch (_) {}
-        }
-        return palette = archives.isEmpty ? null : _palette(archives.first, paletteFiles);
-      }
+      final palettes = PaletteResolver(archives, paletteFiles);
 
       final result = <MapPreview>[];
       mapSource.forEach((name, src) {
@@ -493,7 +586,8 @@ class MapScanner {
           }
           if (lump != null && from != null) {
             final bytes = lump is _MemoryEntry ? lump.bytes : from.read(lump);
-            image = imageFromLump(bytes, paletteOnce);
+            final file = from.path;
+            image = imageFromLump(bytes, () => palettes.forFile(file));
           }
         } catch (_) {
           image = null;
@@ -553,7 +647,7 @@ class MapScanner {
         if (lump == null && mapEntry != null) lump = _pictureInsideMap(archive, mapEntry);
         if (lump == null) continue;
         final bytes = lump is _MemoryEntry ? lump.bytes : archive.read(lump);
-        final image = imageFromLump(bytes, () => _palette(archive, paletteFiles));
+        final image = imageFromLump(bytes, () => PaletteResolver([archive], paletteFiles).forFile(path));
         if (image != null) return image;
       } catch (_) {
         // битый файл — ищем дальше
@@ -669,7 +763,7 @@ class MapScanner {
       }
       return null;
     }
-    final inner = AddonArchive.fromWadBytes(a.read(map), a._file);
+    final inner = AddonArchive.fromWadBytes(a.read(map), a._file, a.path);
     if (inner == null) return null;
     final pic = inner.find('PICTURE');
     // Читаем сразу: вложенный архив живёт только здесь.
@@ -731,7 +825,7 @@ class MapScanner {
   /// Палитра: PLAYPAL из [archives] (последний загруженный важнее), иначе из [files].
   static Uint8List? findPalette(List<AddonArchive> archives, List<String> files) {
     for (final a in archives.reversed) {
-      final e = a.find('PLAYPAL');
+      final e = a.findFirst('PLAYPAL');
       if (e == null) continue;
       try {
         final d = a.read(e);
@@ -856,32 +950,6 @@ class MapScanner {
       }
     }
     return b;
-  }
-
-  /// Палитра (768 байт): PLAYPAL аддона или первая найденная в файлах игры.
-  static Uint8List? _palette(AddonArchive a, List<String> files) {
-    Uint8List? from(AddonArchive x) {
-      final e = x.find('PLAYPAL');
-      if (e == null) return null;
-      final data = x.read(e);
-      return data.length >= 768 ? Uint8List.fromList(data.sublist(0, 768)) : null;
-    }
-
-    final own = from(a);
-    if (own != null) return own;
-    for (final path in files) {
-      final x = AddonArchive.open(path);
-      if (x == null) continue;
-      try {
-        final p = from(x);
-        if (p != null) return p;
-      } catch (_) {
-        // следующий файл
-      } finally {
-        x.close();
-      }
-    }
-    return null;
   }
 
   /// SOC аддона, как их грузит игра (W_LoadDehackedLumps*): в WAD — lumps
