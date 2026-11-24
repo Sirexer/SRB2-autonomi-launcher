@@ -1207,5 +1207,7 @@
   "Models for \"{name}\" imported!": "Моделі для «{name}» імпортовано!",
   "Cannot write to folder": "Не вдалося записати в папку",
   "Installed": "Встановлено",
-  "Selected": "Обрано"
+  "Selected": "Обрано",
+  "Collapse extra tabs": "Згорнути додаткові вкладки",
+  "Show extra tabs": "Показати додаткові вкладки"
 }

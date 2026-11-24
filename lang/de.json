@@ -1207,5 +1207,7 @@
   "Models for \"{name}\" imported!": "Modelle für „{name}“ importiert!",
   "Cannot write to folder": "In Ordner konnte nicht geschrieben werden",
   "Installed": "Installiert",
-  "Selected": "Ausgewählt"
+  "Selected": "Ausgewählt",
+  "Collapse extra tabs": "Zusätzliche Tabs einklappen",
+  "Show extra tabs": "Zusätzliche Tabs anzeigen"
 }

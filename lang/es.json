@@ -1207,5 +1207,7 @@
   "Models for \"{name}\" imported!": "¡Modelos para «{name}» importados!",
   "Cannot write to folder": "No se puede escribir en la carpeta",
   "Installed": "Instalado",
-  "Selected": "Seleccionado"
+  "Selected": "Seleccionado",
+  "Collapse extra tabs": "Contraer pestañas adicionales",
+  "Show extra tabs": "Mostrar pestañas adicionales"
 }

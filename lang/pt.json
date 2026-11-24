@@ -1207,5 +1207,7 @@
   "Models for \"{name}\" imported!": "Modelos para \"{name}\" importados!",
   "Cannot write to folder": "Não foi possível gravar na pasta",
   "Installed": "Instalado",
-  "Selected": "Selecionado"
+  "Selected": "Selecionado",
+  "Collapse extra tabs": "Recolher abas extras",
+  "Show extra tabs": "Mostrar abas extras"
 }

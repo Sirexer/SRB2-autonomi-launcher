@@ -504,6 +504,7 @@ class _MainLauncherScreenState extends State<MainLauncherScreen> {
       };
   List<String> selectedFilesQueue = [];
   int _currentTab = 0;
+  bool _extraTabsExpanded = false;
 
   // Черный список тегов (хранится через запятую или пробелы)
   String blacklistedTagsString = '';
@@ -3997,6 +3998,53 @@ class _MainLauncherScreenState extends State<MainLauncherScreen> {
     return success;
   }
 
+  Widget _tabButton(BuildContext context, int index, String label) {
+    final active = _currentTab == index;
+    return SizedBox(
+      height: 32,
+      child: ElevatedButton(
+        style: ElevatedButton.styleFrom(
+          backgroundColor: active
+              ? Theme.of(context).colorScheme.primary
+              : Theme.of(context).colorScheme.surfaceContainerHighest,
+          foregroundColor: active
+              ? Theme.of(context).colorScheme.onPrimary
+              : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.75),
+          elevation: 0,
+          minimumSize: const Size(64, 32),
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(Theme.of(context).extension<LauncherExtras>()?.radius ?? 6)),
+        ),
+        onPressed: () {
+          setState(() => _currentTab = index);
+          // С вкладки Servers могли скачать аддоны.
+          if (index == 0) _refreshServerAddons();
+        },
+        child: Text(label),
+      ),
+    );
+  }
+
+  Widget _animatedTabSlot({required bool visible, required Widget child}) {
+    return ClipRect(
+      child: TweenAnimationBuilder<double>(
+        tween: Tween<double>(end: visible ? 1.0 : 0.0),
+        duration: const Duration(milliseconds: 220),
+        curve: Curves.easeOutCubic,
+        builder: (context, t, body) => Align(
+          alignment: Alignment.centerLeft,
+          widthFactor: t,
+          child: Opacity(opacity: t.clamp(0.0, 1.0), child: body),
+        ),
+        child: IgnorePointer(
+          ignoring: !visible,
+          child: ExcludeFocus(excluding: !visible, child: child),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -4004,32 +4052,72 @@ class _MainLauncherScreenState extends State<MainLauncherScreen> {
         // Вместо заголовка — переключатель игры.
         title: _buildGameSwitcher(),
         actions: [
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              for (var i = 0; i < _tabLabels.length; i++) ...[
-                if (i > 0) const SizedBox(width: 6),
-                ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: _currentTab == i
-                        ? Theme.of(context).colorScheme.primary
-                        : Theme.of(context).colorScheme.surfaceContainerHighest,
-                    foregroundColor: _currentTab == i
-                        ? Theme.of(context).colorScheme.onPrimary
-                        : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.75),
-                    elevation: 0,
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(Theme.of(context).extension<LauncherExtras>()?.radius ?? 6)),
-                  ),
-                  onPressed: () {
-                    setState(() => _currentTab = i);
-                    // С вкладки Servers могли скачать аддоны.
-                    if (i == 0) _refreshServerAddons();
-                  },
-                  child: Text(_tabLabels[i]),
+          Builder(
+            builder: (context) {
+              final labels = _tabLabels;
+              final hasExtra = labels.length > 3;
+              bool isTabVisible(int i) {
+                if (_extraTabsExpanded || i < 2) return true;
+                if (_currentTab >= 3) return i == _currentTab;
+                return i == 2;
+              }
+
+              return TapRegion(
+                enabled: _extraTabsExpanded,
+                onTapOutside: (_) {
+                  if (_extraTabsExpanded && mounted) {
+                    setState(() => _extraTabsExpanded = false);
+                  }
+                },
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    for (var i = 0; i < labels.length; i++)
+                      if (i == 0)
+                        _tabButton(context, 0, labels[0])
+                      else if (i == 1) ...[
+                        const SizedBox(width: 6),
+                        _tabButton(context, 1, labels[1]),
+                      ] else
+                        _animatedTabSlot(
+                          visible: isTabVisible(i),
+                          child: Padding(
+                            padding: const EdgeInsets.only(left: 6),
+                            child: _tabButton(context, i, labels[i]),
+                          ),
+                        ),
+                    if (hasExtra)
+                      _animatedTabSlot(
+                        visible: !_extraTabsExpanded,
+                        child: Padding(
+                          padding: const EdgeInsets.only(left: 6),
+                          child: Tooltip(
+                            message: tr('Show extra tabs'),
+                            child: SizedBox(
+                              height: 32,
+                              child: ElevatedButton(
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest,
+                                  foregroundColor: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.75),
+                                  elevation: 0,
+                                  minimumSize: const Size(34, 32),
+                                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                                  shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(
+                                          Theme.of(context).extension<LauncherExtras>()?.radius ?? 6)),
+                                ),
+                                onPressed: () => setState(() => _extraTabsExpanded = true),
+                                child: const Icon(Icons.add, size: 18),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
                 ),
-              ],
-            ],
+              );
+            },
           ),
           const SizedBox(width: 16),
           // Уведомления, все скачивания (с серверов и из репозиториев),
