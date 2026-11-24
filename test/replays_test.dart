@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
 import 'package:srb2_autonomi_launcher/services/replays.dart';
@@ -207,6 +208,91 @@ void main() {
 
       final scanned = await ReplayScanner.scanInBackground(gameFolder);
       expect(scanned, hasLength(2));
+    } finally {
+      await temp.delete(recursive: true);
+    }
+  });
+
+  test('patchHeaderAddons rewrites addon table and recomputes 0x10..0x1F checksum', () {
+    final original = _buildReplayBytes(
+      demoVersion: 17,
+      addons: [
+        ('old_addon.pk3', List<int>.filled(16, 0x12)),
+      ],
+      score: 9999,
+      rings: 77,
+      playerName: 'Tails',
+      skin: 'tails',
+      color: 'Orange',
+    );
+
+    final patched = ReplayScanner.patchHeaderAddons(original, [
+      const ReplayAddon('main_pack.pk3', '00112233445566778899aabbccddeeff'),
+      const ReplayAddon('L_SpectatorCamera_V2.3.lua', 'ffeeddccbbaa99887766554433221100'),
+    ]);
+
+    final expectedDigest = md5.convert(Uint8List.sublistView(patched, 0x20)).bytes;
+    expect(Uint8List.sublistView(patched, 0x10, 0x20), expectedDigest);
+
+    final parsed = ReplayScanner.parseBytes(
+      patched,
+      path: r'C:\srb2\SRB2AL-Replays\temp\replay.lmp',
+      relativePlayPath: r'SRB2AL-Replays\temp\replay.lmp',
+      folder: ReplayScanner.importedFolder,
+      size: patched.length,
+      modified: DateTime(2026, 1, 1),
+    );
+    expect(parsed.validHeader, isTrue);
+    expect(parsed.score, 9999);
+    expect(parsed.rings, 77);
+    expect(parsed.playerName, 'Tails');
+    expect(parsed.addons, hasLength(2));
+    expect(parsed.addons[0].name, 'main_pack.pk3');
+    expect(parsed.addons[0].md5, '00112233445566778899aabbccddeeff');
+    expect(parsed.addons[1].name, 'L_SpectatorCamera_V2.3.lua');
+    expect(parsed.addons[1].md5, 'ffeeddccbbaa99887766554433221100');
+  });
+
+  test('prepareTempReplay writes SRB2AL-Replays/temp/replay.lmp and scan ignores temp folder', () async {
+    final temp = await Directory.systemTemp.createTemp('srb2_replay_temp_');
+    try {
+      final gameFolder = p.join(temp.path, 'game');
+      final origReplay = File(p.join(gameFolder, 'data', 'replay', 'main', 'MAP01-sonic-last.lmp'));
+      await origReplay.parent.create(recursive: true);
+      await origReplay.writeAsBytes(_buildReplayBytes(
+        addons: [('missing_addon.pk3', List<int>.filled(16, 0x55))],
+      ));
+
+      final luaFile = File(p.join(temp.path, 'L_SpectatorCamera_V2.3.lua'));
+      await luaFile.writeAsString('-- camera script\n');
+      final luaMd5 = md5.convert(await luaFile.readAsBytes()).toString();
+
+      final relPlay = await ReplayScanner.prepareTempReplay(
+        sourcePath: origReplay.path,
+        gameFolder: gameFolder,
+        addonFilePaths: [luaFile.path],
+      );
+
+      expect(relPlay, p.join('SRB2AL-Replays', 'temp', 'replay.lmp'));
+      final tempFile = File(ReplayScanner.tempReplayPath(gameFolder));
+      expect(tempFile.existsSync(), isTrue);
+
+      final parsedTemp = ReplayScanner.parseBytes(
+        await tempFile.readAsBytes(),
+        path: tempFile.path,
+        relativePlayPath: relPlay,
+        folder: ReplayScanner.importedFolder,
+        size: tempFile.lengthSync(),
+        modified: DateTime.now(),
+      );
+      expect(parsedTemp.addons, hasLength(1));
+      expect(parsedTemp.addons.single.name, 'L_SpectatorCamera_V2.3.lua');
+      expect(parsedTemp.addons.single.md5, luaMd5);
+
+      // В списке реплеев SRB2AL-Replays/temp/replay.lmp не должен появляться — только оригинал.
+      final scanned = await ReplayScanner.scanInBackground(gameFolder);
+      expect(scanned, hasLength(1));
+      expect(scanned.single.path, origReplay.path);
     } finally {
       await temp.delete(recursive: true);
     }

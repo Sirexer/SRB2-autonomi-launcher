@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:desktop_drop/desktop_drop.dart';
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
+import 'package:path/path.dart' as p;
 
 import '../i18n.dart';
 import '../models/game.dart';
@@ -38,6 +39,10 @@ class ReplaysTab extends StatefulWidget {
   /// Скачать отсутствующий аддон из репозитория Autonomi.
   final Future<bool> Function(ModItem mod, ModFile file) onDownloadAddon;
 
+  /// Доп. аддоны для просмотра реплеев (например, Spectator Camera).
+  final List<ReplayExtraAddon> extraAddons;
+  final ValueChanged<List<ReplayExtraAddon>> onExtraAddonsChanged;
+
   /// Запуск реплея: `playdemoArg` (относительный путь для `-playdemo`) и
   /// список локальных файлов аддонов для `-file`.
   final Future<void> Function(String playdemoArg, List<String> addonFiles, {String? executableId}) onPlay;
@@ -51,6 +56,8 @@ class ReplaysTab extends StatefulWidget {
     required this.resolveLocalAddons,
     required this.findRepoAddon,
     required this.onDownloadAddon,
+    this.extraAddons = const [],
+    required this.onExtraAddonsChanged,
     required this.onPlay,
   });
 
@@ -421,71 +428,365 @@ class _ReplaysTabState extends State<ReplaysTab> {
     await _reload();
   }
 
-  Future<void> _launchReplay(ReplayFile replay, {String? executableId}) async {
-    final missing = <ReplayAddon>[];
-    final files = <String>[];
-    for (final a in replay.addons) {
-      final path = _localAddonsByMd5[a.md5];
-      if (path != null && File(path).existsSync()) {
-        files.add(path);
-      } else {
-        missing.add(a);
-      }
-    }
+  List<String> _enabledExtraAddonPaths() => [
+        for (final e in widget.extraAddons)
+          if (e.enabled && File(e.path).existsSync()) e.path,
+      ];
 
-    if (missing.isNotEmpty) {
-      final downloadable = <(ModItem, ModFile)>[];
-      for (final a in missing) {
-        final match = widget.findRepoAddon(a);
-        if (match != null) downloadable.add(match);
-      }
-      final action = await showDialog<String>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          icon: const Icon(Icons.warning_amber_rounded, color: Colors.orangeAccent, size: 36),
-          title: Text(tr('Missing replay addons')),
+  String? _defaultAddonBrowseDir() {
+    final folder = widget.gameFolder;
+    if (folder == null) return null;
+    final downloads = p.joinAll([folder, ...widget.game.downloadPath]);
+    return Directory(downloads).existsSync() ? downloads : folder;
+  }
+
+  Future<void> _openExtraAddonsDialog() async {
+    var list = List<ReplayExtraAddon>.of(widget.extraAddons);
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDlg) => AlertDialog(
+          title: Text(tr('Extra addons for replays')),
           content: SizedBox(
-            width: 480,
+            width: 520,
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(tr('This replay was recorded with addon(s) not found on your disk:')),
-                const SizedBox(height: 8),
-                for (final a in missing)
-                  Text('• ${a.name} (${a.md5.substring(0, a.md5.length >= 8 ? 8 : a.md5.length)})',
-                      style: const TextStyle(fontFamily: 'monospace', fontSize: 12)),
+                Text(
+                  tr('Loaded after the replay\'s own addons (for example, Spectator Camera). Replays with modified addons are launched via {temp}.', {
+                    'temp': p.join(ReplayScanner.importedFolder, ReplayScanner.tempFolder, ReplayScanner.tempReplayName),
+                  }),
+                  style: const TextStyle(fontSize: 12, color: Colors.grey),
+                ),
+                const SizedBox(height: 12),
+                if (list.isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    child: Text(
+                      tr('No extra addons added yet.'),
+                      style: const TextStyle(color: Colors.grey),
+                    ),
+                  )
+                else
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(maxHeight: 280),
+                    child: ListView.builder(
+                      shrinkWrap: true,
+                      itemCount: list.length,
+                      itemBuilder: (ctx, i) {
+                        final item = list[i];
+                        final exists = File(item.path).existsSync();
+                        return CheckboxListTile(
+                          dense: true,
+                          contentPadding: EdgeInsets.zero,
+                          value: item.enabled,
+                          onChanged: (v) {
+                            setDlg(() => list[i] = (path: item.path, enabled: v ?? false));
+                            widget.onExtraAddonsChanged(List.of(list));
+                          },
+                          title: Text(p.basename(item.path), overflow: TextOverflow.ellipsis),
+                          subtitle: Text(
+                            exists ? item.path : '${tr('Missing')}: ${item.path}',
+                            style: TextStyle(fontSize: 11, color: exists ? Colors.grey : Colors.redAccent),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          secondary: IconButton(
+                            icon: const Icon(Icons.delete_outline, size: 18),
+                            tooltip: tr('Remove'),
+                            onPressed: () {
+                              setDlg(() => list.removeAt(i));
+                              widget.onExtraAddonsChanged(List.of(list));
+                            },
+                          ),
+                        );
+                      },
+                    ),
+                  ),
               ],
             ),
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.of(ctx).pop('cancel'), child: Text(tr('Cancel'))),
-            if (downloadable.isNotEmpty)
-              ElevatedButton.icon(
-                icon: const Icon(Icons.download),
-                label: Text(tr('Download ({n})', {'n': downloadable.length})),
-                onPressed: () => Navigator.of(ctx).pop('download'),
-              ),
-            TextButton(onPressed: () => Navigator.of(ctx).pop('anyway'), child: Text(tr('Launch anyway'))),
+            OutlinedButton.icon(
+              icon: const Icon(Icons.add, size: 18),
+              label: Text(tr('Add file...')),
+              onPressed: () async {
+                final picked = await openFiles(
+                  initialDirectory: _defaultAddonBrowseDir(),
+                  acceptedTypeGroups: [
+                    XTypeGroup(label: 'SRB2 Addon', extensions: const ['lua', 'pk3', 'wad', 'soc']),
+                  ],
+                );
+                if (picked.isEmpty) return;
+                final existing = {for (final x in list) p.normalize(x.path).toLowerCase()};
+                var changed = false;
+                for (final f in picked) {
+                  if (existing.add(p.normalize(f.path).toLowerCase())) {
+                    list.add((path: f.path, enabled: true));
+                    changed = true;
+                  }
+                }
+                if (changed) {
+                  setDlg(() {});
+                  widget.onExtraAddonsChanged(List.of(list));
+                }
+              },
+            ),
+            TextButton(onPressed: () => Navigator.of(ctx).pop(), child: Text(tr('Close'))),
           ],
         ),
-      );
-      if (action == null || action == 'cancel' || !mounted) return;
-      if (action == 'download') {
-        for (final (mod, file) in downloadable) {
-          await widget.onDownloadAddon(mod, file);
+      ),
+    );
+  }
+
+  Future<void> _openEditReplayAddonsDialog(ReplayFile replay) async {
+    final recorded = <(ReplayAddon addon, String? localPath, bool checked)>[
+      for (final a in replay.addons)
+        () {
+          final lp = _localAddonsByMd5[a.md5];
+          final ok = lp != null && File(lp).existsSync();
+          return (a, ok ? lp : null, ok);
+        }(),
+    ];
+    final recordedSet = {
+      for (final r in recorded)
+        if (r.$2 != null) p.normalize(r.$2!).toLowerCase(),
+    };
+    final custom = <(String path, bool checked)>[
+      for (final pth in _enabledExtraAddonPaths())
+        if (!recordedSet.contains(p.normalize(pth).toLowerCase())) (pth, true),
+    ];
+
+    final launch = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDlg) => AlertDialog(
+          title: Text(tr('Edit replay addons')),
+          content: SizedBox(
+            width: 520,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  tr('Choose which addons to load with this replay. Modified launches are saved to {temp}.', {
+                    'temp': p.join(ReplayScanner.importedFolder, ReplayScanner.tempFolder, ReplayScanner.tempReplayName),
+                  }),
+                  style: const TextStyle(fontSize: 12, color: Colors.grey),
+                ),
+                const SizedBox(height: 10),
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxHeight: 300),
+                  child: ListView(
+                    shrinkWrap: true,
+                    children: [
+                      if (recorded.isNotEmpty) ...[
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 4),
+                          child: Text(tr('Recorded in replay'),
+                              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                        ),
+                        for (var i = 0; i < recorded.length; i++)
+                          CheckboxListTile(
+                            dense: true,
+                            contentPadding: EdgeInsets.zero,
+                            value: recorded[i].$3,
+                            onChanged: recorded[i].$2 == null
+                                ? null
+                                : (v) => setDlg(() => recorded[i] = (recorded[i].$1, recorded[i].$2, v ?? false)),
+                            title: Text(recorded[i].$1.name, overflow: TextOverflow.ellipsis),
+                            subtitle: Text(
+                              recorded[i].$2 ?? tr('Missing'),
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: recorded[i].$2 == null ? Colors.orangeAccent : Colors.grey,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                      ],
+                      if (custom.isNotEmpty) ...[
+                        Padding(
+                          padding: const EdgeInsets.only(top: 8, bottom: 4),
+                          child: Text(tr('Added addons'),
+                              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                        ),
+                        for (var i = 0; i < custom.length; i++)
+                          CheckboxListTile(
+                            dense: true,
+                            contentPadding: EdgeInsets.zero,
+                            value: custom[i].$2,
+                            onChanged: (v) => setDlg(() => custom[i] = (custom[i].$1, v ?? false)),
+                            title: Text(p.basename(custom[i].$1), overflow: TextOverflow.ellipsis),
+                            subtitle: Text(custom[i].$1,
+                                style: const TextStyle(fontSize: 11, color: Colors.grey),
+                                overflow: TextOverflow.ellipsis),
+                            secondary: IconButton(
+                              icon: const Icon(Icons.delete_outline, size: 18),
+                              onPressed: () => setDlg(() => custom.removeAt(i)),
+                            ),
+                          ),
+                      ],
+                      if (recorded.isEmpty && custom.isEmpty)
+                        Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          child: Text(tr('No addons selected.'), style: const TextStyle(color: Colors.grey)),
+                        ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            OutlinedButton.icon(
+              icon: const Icon(Icons.add, size: 18),
+              label: Text(tr('Add file...')),
+              onPressed: () async {
+                final picked = await openFiles(
+                  initialDirectory: _defaultAddonBrowseDir(),
+                  acceptedTypeGroups: [
+                    XTypeGroup(label: 'SRB2 Addon', extensions: const ['lua', 'pk3', 'wad', 'soc']),
+                  ],
+                );
+                if (picked.isEmpty) return;
+                final seen = {
+                  ...recordedSet,
+                  for (final c in custom) p.normalize(c.$1).toLowerCase(),
+                };
+                for (final f in picked) {
+                  if (seen.add(p.normalize(f.path).toLowerCase())) {
+                    custom.add((f.path, true));
+                  }
+                }
+                setDlg(() {});
+              },
+            ),
+            TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: Text(tr('Cancel'))),
+            FilledButton.icon(
+              icon: const Icon(Icons.play_arrow, size: 18),
+              label: Text(tr('Play')),
+              onPressed: () => Navigator.of(ctx).pop(true),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (launch != true || !mounted) return;
+    final editedFiles = <String>[
+      for (final r in recorded)
+        if (r.$3 && r.$2 != null) r.$2!,
+      for (final c in custom)
+        if (c.$2) c.$1,
+    ];
+    await _launchReplay(replay, editedFiles: editedFiles);
+  }
+
+  Future<void> _launchReplay(ReplayFile replay, {String? executableId, List<String>? editedFiles}) async {
+    final folder = widget.gameFolder;
+    if (folder == null) return;
+    final missing = <ReplayAddon>[];
+    final files = <String>[];
+    var usedExtras = false;
+
+    if (editedFiles != null) {
+      files.addAll(editedFiles);
+    } else {
+      for (final a in replay.addons) {
+        final path = _localAddonsByMd5[a.md5];
+        if (path != null && File(path).existsSync()) {
+          files.add(path);
+        } else {
+          missing.add(a);
         }
-        await _reload();
-        if (!mounted) return;
-        files.clear();
-        for (final a in replay.addons) {
-          final path = _localAddonsByMd5[a.md5];
-          if (path != null && File(path).existsSync()) files.add(path);
+      }
+
+      if (missing.isNotEmpty) {
+        final downloadable = <(ModItem, ModFile)>[];
+        for (final a in missing) {
+          final match = widget.findRepoAddon(a);
+          if (match != null) downloadable.add(match);
+        }
+        final action = await showDialog<String>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            icon: const Icon(Icons.warning_amber_rounded, color: Colors.orangeAccent, size: 36),
+            title: Text(tr('Missing replay addons')),
+            content: SizedBox(
+              width: 480,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(tr('This replay was recorded with addon(s) not found on your disk:')),
+                  const SizedBox(height: 8),
+                  for (final a in missing)
+                    Text('• ${a.name} (${a.md5.substring(0, a.md5.length >= 8 ? 8 : a.md5.length)})',
+                        style: const TextStyle(fontFamily: 'monospace', fontSize: 12)),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.of(ctx).pop('cancel'), child: Text(tr('Cancel'))),
+              if (downloadable.isNotEmpty)
+                ElevatedButton.icon(
+                  icon: const Icon(Icons.download),
+                  label: Text(tr('Download ({n})', {'n': downloadable.length})),
+                  onPressed: () => Navigator.of(ctx).pop('download'),
+                ),
+              TextButton(onPressed: () => Navigator.of(ctx).pop('anyway'), child: Text(tr('Launch anyway'))),
+            ],
+          ),
+        );
+        if (action == null || action == 'cancel' || !mounted) return;
+        if (action == 'download') {
+          for (final (mod, file) in downloadable) {
+            await widget.onDownloadAddon(mod, file);
+          }
+          await _reload();
+          if (!mounted) return;
+          files.clear();
+          missing.clear();
+          for (final a in replay.addons) {
+            final path = _localAddonsByMd5[a.md5];
+            if (path != null && File(path).existsSync()) {
+              files.add(path);
+            } else {
+              missing.add(a);
+            }
+          }
+        }
+      }
+
+      final seen = {for (final f in files) p.normalize(f).toLowerCase()};
+      for (final extra in _enabledExtraAddonPaths()) {
+        if (seen.add(p.normalize(extra).toLowerCase())) {
+          files.add(extra);
+          usedExtras = true;
         }
       }
     }
 
-    await widget.onPlay(replay.relativePlayPath, files, executableId: executableId);
+    var playdemoArg = replay.relativePlayPath;
+    final needsTemp = replay.validHeader &&
+        replay.demoVersion >= 16 &&
+        (editedFiles != null || missing.isNotEmpty || usedExtras || files.length != replay.addons.length);
+    if (needsTemp) {
+      try {
+        playdemoArg = await ReplayScanner.prepareTempReplay(
+          sourcePath: replay.path,
+          gameFolder: folder,
+          addonFilePaths: files,
+        );
+      } catch (e) {
+        if (mounted) {
+          showSnack(context, SnackBar(content: Text('$e'), backgroundColor: Colors.red));
+        }
+        return;
+      }
+    }
+
+    await widget.onPlay(playdemoArg, files, executableId: executableId);
   }
 
   String _kindLabel(ReplayKind kind) => switch (kind) {
@@ -665,6 +966,14 @@ class _ReplaysTabState extends State<ReplaysTab> {
                               padding: EdgeInsets.only(right: 12),
                               child: SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)),
                             ),
+                          OutlinedButton.icon(
+                            icon: const Icon(Icons.extension_outlined, size: 18),
+                            label: Text(_enabledExtraAddonPaths().isEmpty
+                                ? tr('Extra addons')
+                                : tr('Extra addons ({n})', {'n': _enabledExtraAddonPaths().length})),
+                            onPressed: _openExtraAddonsDialog,
+                          ),
+                          const SizedBox(width: 8),
                           OutlinedButton.icon(
                             icon: const Icon(Icons.file_open_outlined, size: 18),
                             label: Text(tr('From disk...')),
@@ -871,7 +1180,9 @@ class _ReplaysTabState extends State<ReplaysTab> {
                 PopupMenuButton<String>(
                   icon: const Icon(Icons.more_vert),
                   onSelected: (action) async {
-                    if (action == 'copy') {
+                    if (action == 'edit_addons') {
+                      await _openEditReplayAddonsDialog(r);
+                    } else if (action == 'copy') {
                       await _saveCopy(r);
                     } else if (action == 'folder') {
                       await showFileInFolder(context, r.path);
@@ -880,6 +1191,15 @@ class _ReplaysTabState extends State<ReplaysTab> {
                     }
                   },
                   itemBuilder: (context) => [
+                    if (r.validHeader && r.demoVersion >= 16)
+                      PopupMenuItem(
+                        value: 'edit_addons',
+                        child: ListTile(
+                          dense: true,
+                          leading: const Icon(Icons.tune),
+                          title: Text(tr('Edit addons & play...')),
+                        ),
+                      ),
                     if (!group.isImported)
                       PopupMenuItem(
                         value: 'copy',

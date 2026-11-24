@@ -317,6 +317,9 @@ class _MainLauncherScreenState extends State<MainLauncherScreen> {
   /// игры свои (у SRB2 Legacy аддонов в репозиториях нет).
   final Map<String, List<ProgressCandidate>> _progressPacks = {};
 
+  /// Доп. аддоны для вкладки Replays (по игре): например, Spectator Camera.
+  final Map<String, List<ReplayExtraAddon>> _replayExtraAddons = {};
+
   /// Номера экспериментальных вкладок; null — вкладка выключена.
   int? get _playerTab => _playerEnabled ? 3 : null;
   int? get _progressTab => _progressEnabled ? 3 + (_playerEnabled ? 1 : 0) : null;
@@ -725,6 +728,13 @@ class _MainLauncherScreenState extends State<MainLauncherScreen> {
           for (final e in list.cast<Map<String, dynamic>>())
             // inQueue: заданный вручную пак важнее того же пака из репозитория.
             (title: e['title'] as String, files: (e['files'] as List).cast<String>(), inQueue: true),
+        ];
+      } catch (_) {}
+      try {
+        final list = jsonDecode(prefs.getString(g.key('replays_extra_addons')) ?? '[]') as List;
+        _replayExtraAddons[g.id] = [
+          for (final e in list.cast<Map<String, dynamic>>())
+            (path: e['path'] as String, enabled: (e['enabled'] as bool?) ?? true),
         ];
       } catch (_) {}
     }
@@ -1814,6 +1824,15 @@ class _MainLauncherScreenState extends State<MainLauncherScreen> {
     });
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('replays_enabled', v);
+  }
+
+  Future<void> _saveReplayExtraAddons(GameDef game, List<ReplayExtraAddon> list) async {
+    setState(() => _replayExtraAddons[game.id] = list);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(
+      game.key('replays_extra_addons'),
+      jsonEncode([for (final e in list) {'path': e.path, 'enabled': e.enabled}]),
+    );
   }
 
   Future<void> _setSaveProtection(bool v) async {
@@ -4284,6 +4303,8 @@ class _MainLauncherScreenState extends State<MainLauncherScreen> {
                 }
                 return ok;
               },
+              extraAddons: _replayExtraAddons[_game.id] ?? const [],
+              onExtraAddonsChanged: (list) => _saveReplayExtraAddons(_game, list),
               onPlay: _playReplay,
             )
           : _currentTab == _progressTab && _game.id == 'drrr'

@@ -1251,5 +1251,17 @@
   "A Replays tab for Sonic Robo Blast 2: browse recorded .lmp replays, import or download them into SRB2AL-Replays, inspect maps, characters and required addons, and play them back.": "Вкладка «Реплеї» для Sonic Robo Blast 2: перегляд записаних повторів .lmp, імпорт і завантаження до SRB2AL-Replays, карти, персонажі, потрібні аддони та відтворення.",
   "Play with another build": "Запустити через іншу збірку",
   "Failed to import models: {error}": "Не вдалося додати моделі до наборів: {error}",
-  "{game}: 3D models are not supported": "{game}: 3D-моделі не підтримуються"
+  "{game}: 3D models are not supported": "{game}: 3D-моделі не підтримуються",
+  "Extra addons for replays": "Дод. аддони для реплеїв",
+  "Loaded after the replay's own addons (for example, Spectator Camera). Replays with modified addons are launched via {temp}.": "Завантажуються після аддонів самого реплея (наприклад, Spectator Camera). Реплеї зі зміненим набором аддонів запускаються через {temp}.",
+  "No extra addons added yet.": "Додаткові аддони ще не додані.",
+  "Add file...": "Додати файл...",
+  "Edit replay addons": "Змінити аддони реплея",
+  "Choose which addons to load with this replay. Modified launches are saved to {temp}.": "Виберіть, які аддони завантажувати з цим реплеєм. Змінений запуск зберігається в {temp}.",
+  "Recorded in replay": "Записано в реплеї",
+  "Added addons": "Додані аддони",
+  "No addons selected.": "Аддони не вибрано.",
+  "Extra addons": "Дод. аддони",
+  "Extra addons ({n})": "Дод. аддони ({n})",
+  "Edit addons & play...": "Налаштувати аддони та запустити..."
 }

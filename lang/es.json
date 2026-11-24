@@ -1251,5 +1251,17 @@
   "A Replays tab for Sonic Robo Blast 2: browse recorded .lmp replays, import or download them into SRB2AL-Replays, inspect maps, characters and required addons, and play them back.": "Pestaña Repeticiones para Sonic Robo Blast 2: explora repeticiones .lmp grabadas, impórtalas o descárgalas en SRB2AL-Replays, revisa mapas, personajes y addons necesarios, y reprodúcelas.",
   "Play with another build": "Iniciar con otra compilación",
   "Failed to import models: {error}": "No se pudieron importar los modelos: {error}",
-  "{game}: 3D models are not supported": "{game}: no admite modelos 3D"
+  "{game}: 3D models are not supported": "{game}: no admite modelos 3D",
+  "Extra addons for replays": "Addons adicionales para repeticiones",
+  "Loaded after the replay's own addons (for example, Spectator Camera). Replays with modified addons are launched via {temp}.": "Se cargan después de los addons propios de la repetición (por ejemplo, Spectator Camera). Las repeticiones modificadas se inician mediante {temp}.",
+  "No extra addons added yet.": "Aún no se han añadido addons adicionales.",
+  "Add file...": "Añadir archivo...",
+  "Edit replay addons": "Editar addons de la repetición",
+  "Choose which addons to load with this replay. Modified launches are saved to {temp}.": "Elige qué addons cargar con esta repetición. Los inicios modificados se guardan en {temp}.",
+  "Recorded in replay": "Grabado en la repetición",
+  "Added addons": "Addons añadidos",
+  "No addons selected.": "No hay addons seleccionados.",
+  "Extra addons": "Addons extra",
+  "Extra addons ({n})": "Addons extra ({n})",
+  "Edit addons & play...": "Editar addons y reproducir..."
 }

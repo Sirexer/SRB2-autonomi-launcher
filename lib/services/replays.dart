@@ -3,9 +3,13 @@ import 'dart:io';
 import 'dart:isolate';
 import 'dart:typed_data';
 
+import 'package:crypto/crypto.dart';
 import 'package:path/path.dart' as p;
 
 import 'platform_utils.dart';
+
+/// Доп. аддон для просмотра реплеев (например, Spectator Camera).
+typedef ReplayExtraAddon = ({String path, bool enabled});
 
 /// Аддон, записанный в заголовке реплея SRB2 2.2 (`demoversion >= 16`).
 class ReplayAddon {
@@ -119,6 +123,8 @@ class ReplayScanner {
   ReplayScanner._();
 
   static const importedFolder = 'SRB2AL-Replays';
+  static const tempFolder = 'temp';
+  static const tempReplayName = 'replay.lmp';
 
   /// Магическая сигнатура заголовка SRB2 2.2: `\xf0SRB2Replay\x0f`.
   static const _magic = <int>[
@@ -126,6 +132,12 @@ class ReplayScanner {
   ];
 
   static String importedDir(String gameFolder) => p.join(gameFolder, importedFolder);
+
+  static String tempDir(String gameFolder) => p.join(importedDir(gameFolder), tempFolder);
+
+  static String tempReplayPath(String gameFolder) => p.join(tempDir(gameFolder), tempReplayName);
+
+  static String tempReplayRelativePlayPath() => p.join(importedFolder, tempFolder, tempReplayName);
 
   static bool hasMagic(Uint8List bytes) {
     if (bytes.length < _magic.length) return false;
@@ -272,13 +284,15 @@ class ReplayScanner {
     final out = <ReplayFile>[];
     final seenPaths = <String>{};
 
-    void scanRoot(Directory dir, {required String baseForRelative, String? fixedFolder}) {
+    void scanRoot(Directory dir, {required String baseForRelative, String? fixedFolder, bool skipTemp = false}) {
       if (!dir.existsSync()) return;
+      final skipPrefix = skipTemp ? '${p.normalize(p.join(dir.path, tempFolder)).toLowerCase()}${Platform.pathSeparator}' : null;
       try {
         for (final e in dir.listSync(recursive: true, followLinks: false)) {
           if (e is! File) continue;
           if (!e.path.toLowerCase().endsWith('.lmp')) continue;
           final norm = p.normalize(e.path).toLowerCase();
+          if (skipPrefix != null && norm.startsWith(skipPrefix)) continue;
           if (!seenPaths.add(norm)) continue;
 
           try {
@@ -306,8 +320,9 @@ class ReplayScanner {
       } catch (_) {}
     }
 
-    // 1. Импортированные лаунчером реплеи — прямо в корне игры (`SRB2AL-Replays/`).
-    scanRoot(Directory(importedDir(gameFolder)), baseForRelative: gameFolder, fixedFolder: importedFolder);
+    // 1. Импортированные лаунчером реплеи — прямо в корне игры (`SRB2AL-Replays/`, кроме временного `temp/`).
+    scanRoot(Directory(importedDir(gameFolder)),
+        baseForRelative: gameFolder, fixedFolder: importedFolder, skipTemp: true);
     // 2. Стандартная папка реплеев SRB2 2.2 (`data/replay/...`).
     final dataDir = p.join(gameFolder, 'data');
     scanRoot(Directory(p.join(dataDir, 'replay')), baseForRelative: dataDir);
@@ -451,5 +466,81 @@ class ReplayScanner {
     } finally {
       client.close(force: true);
     }
+  }
+
+  /// Пересобирает заголовок `.lmp` (`demoversion >= 16`) под указанный список аддонов
+  /// и пересчитывает контрольную сумму (`0x10..0x1F` = MD5 байтов с `0x20` до конца).
+  static Uint8List patchHeaderAddons(Uint8List sourceBytes, List<ReplayAddon> addons) {
+    if (!hasMagic(sourceBytes) || sourceBytes.length < 0x39) {
+      throw const FormatException('Not a valid SRB2 2.2 replay file');
+    }
+    final demoVersion = sourceBytes[0x0E];
+    if (demoVersion < 16) {
+      return Uint8List.fromList(sourceBytes);
+    }
+    final bd = ByteData.sublistView(sourceBytes);
+    final oldNumFiles = bd.getUint16(0x37, Endian.little);
+    var off = 0x39;
+    for (var i = 0; i < oldNumFiles; i++) {
+      while (off < sourceBytes.length && sourceBytes[off] != 0) {
+        off++;
+      }
+      if (off >= sourceBytes.length) throw const FormatException('Corrupt replay file header');
+      off += 1 + 16; // '\0' + MD5
+      if (off > sourceBytes.length) throw const FormatException('Corrupt replay file header');
+    }
+
+    final out = BytesBuilder(copy: false);
+    // 0x00..0x36 (с временным местом под контрольную сумму 0x10..0x1F)
+    out.add(Uint8List.sublistView(sourceBytes, 0, 0x37));
+    final count = addons.length;
+    out.addByte(count & 0xFF);
+    out.addByte((count >> 8) & 0xFF);
+    for (final a in addons) {
+      out.add(latin1.encode(a.name));
+      out.addByte(0);
+      out.add(_hexToBytes16(a.md5));
+    }
+    out.add(Uint8List.sublistView(sourceBytes, off));
+
+    final result = out.takeBytes();
+    final digest = md5.convert(Uint8List.sublistView(result, 0x20)).bytes;
+    result.setRange(0x10, 0x20, digest);
+    return result;
+  }
+
+  static Uint8List _hexToBytes16(String hex) {
+    final out = Uint8List(16);
+    if (hex.length < 32) return out;
+    for (var i = 0; i < 16; i++) {
+      out[i] = int.tryParse(hex.substring(i * 2, i * 2 + 2), radix: 16) ?? 0;
+    }
+    return out;
+  }
+
+  /// Создаёт `<gameFolder>/SRB2AL-Replays/temp/replay.lmp` с обновлённым списком
+  /// аддонов [addonFilePaths] (базовые имена и реальные MD5) и пересчитанной суммой.
+  /// Возвращает относительный путь для `-playdemo`.
+  static Future<String> prepareTempReplay({
+    required String sourcePath,
+    required String gameFolder,
+    required List<String> addonFilePaths,
+  }) async {
+    final addons = <ReplayAddon>[];
+    for (final path in addonFilePaths) {
+      final f = File(path);
+      if (!await f.exists()) {
+        throw FileSystemException('Addon file not found', path);
+      }
+      final digest = await md5.bind(f.openRead()).first;
+      final md5Hex = digest.bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
+      addons.add(ReplayAddon(p.basename(path), md5Hex));
+    }
+    final bytes = await File(sourcePath).readAsBytes();
+    final patched = patchHeaderAddons(bytes, addons);
+    final dir = Directory(tempDir(gameFolder));
+    await dir.create(recursive: true);
+    await File(tempReplayPath(gameFolder)).writeAsBytes(patched, flush: true);
+    return tempReplayRelativePlayPath();
   }
 }
