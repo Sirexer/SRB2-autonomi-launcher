@@ -119,6 +119,14 @@ class AppPaths {
     } catch (_) {}
     return null;
   }
+
+  /// Папка для установки сборок игры (`user_data/builds` или `%APPDATA%/.../builds`).
+  static Future<Directory> buildsDir() async {
+    final support = (await getApplicationSupportDirectory()).path;
+    final dir = Directory(p.join(support, 'builds'));
+    await dir.create(recursive: true);
+    return dir;
+  }
 }
 
 /// Папки path_provider в портативном режиме: данные и кэш — в [dir], прочее

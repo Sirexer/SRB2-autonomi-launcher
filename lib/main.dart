@@ -69,6 +69,7 @@ import 'theme/app_themes.dart';
 import 'services/window_effects.dart';
 import 'ui/snack.dart';
 import 'ui/srb2_text.dart';
+import 'services/model_packs.dart';
 
 Future<void> main(List<String> args) async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -274,6 +275,14 @@ class _MainLauncherScreenState extends State<MainLauncherScreen> {
 
   /// Файл с тем же именем, но другим MD5 (ModFile.key → путь).
   Map<String, String> _conflictPaths = {};
+
+  /// Пути к исполняемым файлам установленных сборок (ModFile.key → exePath).
+  final Map<String, String> _installedBuildExes = {};
+
+  Future<void> _saveInstalledBuilds() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('installed_build_exes', jsonEncode(_installedBuildExes));
+  }
 
   /// Избранные аддоны (ModItem.key) и фильтр "только избранные".
   final Set<String> _favoriteAddons = {};
@@ -668,6 +677,15 @@ class _MainLauncherScreenState extends State<MainLauncherScreen> {
       if (saved != null) {
         (jsonDecode(saved) as Map<String, dynamic>).forEach((k, v) {
           if (v is String) _selectedVersions[k] = v;
+        });
+      }
+    } catch (_) {}
+
+    try {
+      final savedBuilds = prefs.getString('installed_build_exes');
+      if (savedBuilds != null) {
+        (jsonDecode(savedBuilds) as Map<String, dynamic>).forEach((k, v) {
+          if (v is String) _installedBuildExes[k] = v;
         });
       }
     } catch (_) {}
@@ -2349,6 +2367,7 @@ class _MainLauncherScreenState extends State<MainLauncherScreen> {
         // не считается.
         final paths = <String>{};
         for (final f in mod.files) {
+          if (f.type.isBuild) continue;
           var local = AddonPaths.candidates(downloads, mod, f)
               .where((c) => File(c).existsSync() && _sameSize(c, f.size))
               .firstOrNull;
@@ -3131,7 +3150,8 @@ class _MainLauncherScreenState extends State<MainLauncherScreen> {
 
     final addonFiles = <String>{
       for (final f in mod.files)
-        for (final c in AddonPaths.candidates(downloads, mod, f)) p.canonicalize(c),
+        if (f.type == ModFileType.addon)
+          for (final c in AddonPaths.candidates(downloads, mod, f)) p.canonicalize(c),
     };
     final positions = [
       for (var i = 0; i < selectedFilesQueue.length; i++)
@@ -3139,11 +3159,12 @@ class _MainLauncherScreenState extends State<MainLauncherScreen> {
     ];
     if (positions.isEmpty) return;
 
+    final addonFilesOfVersion = version.files.where((f) => f.type == ModFileType.addon).toList();
     final wanted = [
-      for (final f in version.files)
+      for (final f in addonFilesOfVersion)
         if (fileStatuses[f.key] == 'ok' && _localPaths[f.key] != null) _queueEntryFor(_localPaths[f.key]!),
     ];
-    if (wanted.length != version.files.length) return; // версия скачана не полностью
+    if (wanted.length != addonFilesOfVersion.length) return; // версия скачана не полностью
 
     final current = [for (final i in positions) selectedFilesQueue[i]];
     if (current.length == wanted.length &&
@@ -3208,6 +3229,32 @@ class _MainLauncherScreenState extends State<MainLauncherScreen> {
     publish();
 
     for (final file in version.files) {
+      if (file.type.isBuild) {
+        var status = 'missing';
+        final savedExe = _installedBuildExes[file.key];
+        if (savedExe != null && File(savedExe).existsSync()) {
+          status = 'installed';
+          paths[file.key] = savedExe;
+        } else {
+          final buildsDir = await AppPaths.buildsDir();
+          final folderName = '${PlatformUtils.safeFileName(mod.name) ?? mod.id}_${PlatformUtils.safeFileName(file.version) ?? 'build'}';
+          final buildDir = Directory(p.join(buildsDir.path, folderName));
+          String? foundExe;
+          if (await buildDir.exists()) {
+            final found = await LaunchSettings.findExecutables(buildDir.path, hints: [_game.id, 'srb2', 'ringracers']);
+            foundExe = found.where((e) => e.likelySrb2).firstOrNull?.path ?? found.firstOrNull?.path;
+          }
+          if (foundExe != null && File(foundExe).existsSync()) {
+            _installedBuildExes[file.key] = foundExe;
+            status = 'installed';
+            paths[file.key] = foundExe;
+          }
+        }
+        statuses[file.key] = status;
+        publish();
+        continue;
+      }
+
       final candidates = AddonPaths.candidates(downloadDir, mod, file);
       var status = 'missing';
       for (var i = 0; i < candidates.length; i++) {
@@ -3610,12 +3657,105 @@ class _MainLauncherScreenState extends State<MainLauncherScreen> {
     return '${v.toStringAsFixed(i == 0 ? 0 : 1)} ${units[i]}';
   }
 
+  Future<bool> _promptAndInstallBuild(ModItem mod, ModFile file) async {
+    final pending = _repoQueue.where((d) => d.file.key == file.key).firstOrNull ??
+        (_repoCurrent?.file.key == file.key ? _repoCurrent : null);
+    if (pending != null) return pending.done.future;
+
+    final buildsDir = await AppPaths.buildsDir();
+    if (!mounted) return false;
+    final folderName = '${PlatformUtils.safeFileName(mod.name) ?? mod.id}_${PlatformUtils.safeFileName(file.version) ?? 'build'}';
+    final defaultTarget = p.join(buildsDir.path, folderName);
+
+    final pathCtrl = TextEditingController(text: defaultTarget);
+    final proceed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDlgState) => AlertDialog(
+          title: Text(tr('Install custom build')),
+          content: SizedBox(
+            width: 480,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(tr('Custom game build: {name} ({version})', {
+                  'name': mod.name,
+                  'version': file.version.isEmpty ? file.name : file.version,
+                })),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: pathCtrl,
+                  decoration: InputDecoration(
+                    labelText: tr('Installation folder'),
+                    suffixIcon: IconButton(
+                      icon: const Icon(Icons.folder_open),
+                      tooltip: tr('Select folder'),
+                      onPressed: () async {
+                        final chosen = await getDirectoryPath(initialDirectory: pathCtrl.text);
+                        if (chosen != null) {
+                          setDlgState(() => pathCtrl.text = chosen);
+                        }
+                      },
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: Text(tr('Cancel')),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: Text(tr('Install')),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (proceed != true || !mounted) return false;
+    final targetFolder = pathCtrl.text.trim();
+    if (targetFolder.isEmpty) return false;
+
+    final targetDir = Directory(targetFolder);
+    try {
+      await targetDir.create(recursive: true);
+    } catch (e) {
+      if (mounted) {
+        await _showProblem(
+          title: tr('Cannot write to folder'),
+          message: '$e',
+          error: true,
+        );
+      }
+      return false;
+    }
+
+    final fullOutputPath = p.join(targetFolder, file.name);
+
+    late final _RepoDownload job;
+    final item = DownloadCenter.instance.start(file.name, '${mod.repositorySource} — ${mod.name}',
+        queued: true, cancel: () => _cancelQueued(job))
+      ..source = tr('your repository');
+    job = _RepoDownload(mod, file, fullOutputPath, item);
+    if (mounted) setState(() => _repoQueue.add(job));
+    unawaited(_pumpRepoQueue());
+    return job.done.future;
+  }
+
   /// Скачивает файл версии аддона из Autonomi в `DOWNLOAD/<аддон>/<версия>/`.
   /// Если там уже лежит другой файл — спрашивает, что делать (сразу, при
   /// нажатии). Файлы качаются по одному: пока идёт другое скачивание, этот
   /// встаёт в очередь (видно в «Скачиваниях», можно убрать); не скачался —
   /// очередь идёт дальше. true — файл скачан (или уже был) и MD5 совпал.
   Future<bool> _downloadModFile(ModItem mod, ModFile file, {bool overwrite = false}) async {
+    if (file.type.isBuild) {
+      return _promptAndInstallBuild(mod, file);
+    }
     // Уже качается или ждёт — тот же результат, второй раз не ставим.
     final pending = _repoQueue.where((d) => d.file.key == file.key).firstOrNull ??
         (_repoCurrent?.file.key == file.key ? _repoCurrent : null);
@@ -3793,6 +3933,46 @@ class _MainLauncherScreenState extends State<MainLauncherScreen> {
       await _rememberMd5(fullOutputPath, file.md5);
     }
 
+    if (success && file.type == ModFileType.models && _game.models != null) {
+      try {
+        final lib = await ModelLibrary.load(_game);
+        await lib.add(fullOutputPath, name: '${mod.name} ${file.version}'.trim());
+      } catch (e) {
+        AppLog.console('Failed to import models from $fullOutputPath: $e');
+      }
+    } else if (success && file.type.isBuild) {
+      try {
+        final installDir = Directory(p.dirname(fullOutputPath));
+        String? exePath;
+        if (file.name.toLowerCase().endsWith('.zip')) {
+          final archive = AddonArchive.open(fullOutputPath);
+          if (archive != null) {
+            await archive.extractTo(installDir.path);
+            archive.close();
+            try {
+              await File(fullOutputPath).delete();
+            } catch (_) {}
+          }
+          final found = await LaunchSettings.findExecutables(installDir.path, hints: [_game.id, 'srb2', 'ringracers']);
+          exePath = found.where((e) => e.likelySrb2).firstOrNull?.path ?? found.firstOrNull?.path;
+        } else {
+          exePath = fullOutputPath;
+        }
+        if (exePath != null) {
+          if (!Platform.isWindows) {
+            await Process.run('chmod', ['755', exePath]);
+          }
+          final name = '${mod.name} ${file.version}'.trim();
+          final launchExe = LaunchExecutable(id: LaunchExecutable.newId(), name: name, command: exePath);
+          _launch.addExecutable(launchExe, select: true);
+          _installedBuildExes[file.key] = exePath;
+          await _saveInstalledBuilds();
+        }
+      } catch (e) {
+        AppLog.console('Failed to install build from $fullOutputPath: $e');
+      }
+    }
+
     if (success && selectedMod != null) {
       await _checkModFilesStatus(selectedMod!);
       // Очередь переходит на скачанную выбранную версию.
@@ -3800,9 +3980,14 @@ class _MainLauncherScreenState extends State<MainLauncherScreen> {
     }
 
     if (mounted) {
+      final successMsg = file.type.isBuild
+          ? tr('Build "{name}" installed and selected for launch!', {'name': '${mod.name} ${file.version}'.trim()})
+          : (file.type == ModFileType.models
+              ? tr('Models for "{name}" imported!', {'name': mod.name})
+              : tr('File {name} successfully downloaded!', {'name': fileName}));
       showSnack(context, 
         SnackBar(
-          content: Text(success ? tr('File {name} successfully downloaded!', {'name': fileName}) : tr('Error downloading {name}.', {'name': fileName})),
+          content: Text(success ? successMsg : tr('Error downloading {name}.', {'name': fileName})),
           backgroundColor: success ? Colors.green : Colors.red,
         ),
       );
@@ -4328,7 +4513,27 @@ class _MainLauncherScreenState extends State<MainLauncherScreen> {
                                 String statusText;
                                 IconData statusIcon;
 
-                                if (status == 'ok') {
+                                if (file.type.isBuild) {
+                                  if (status == 'installed') {
+                                    statusColor = Colors.green;
+                                    statusText = tr('Custom build installed and ready to launch');
+                                    statusIcon = Icons.sports_esports;
+                                  } else {
+                                    statusColor = Colors.grey;
+                                    statusText = tr('Custom game build: not installed yet');
+                                    statusIcon = Icons.download_for_offline_outlined;
+                                  }
+                                } else if (file.type == ModFileType.models) {
+                                  if (status == 'ok') {
+                                    statusColor = Colors.green;
+                                    statusText = tr('3D model pack imported');
+                                    statusIcon = Icons.view_in_ar;
+                                  } else {
+                                    statusColor = Colors.grey;
+                                    statusText = tr('3D model pack: not downloaded yet');
+                                    statusIcon = Icons.view_in_ar_outlined;
+                                  }
+                                } else if (status == 'ok') {
                                   statusColor = Colors.green;
                                   statusText = tr('File is up to date (MD5 matches)');
                                   statusIcon = Icons.check_circle;
@@ -4420,6 +4625,106 @@ class _MainLauncherScreenState extends State<MainLauncherScreen> {
                                     height: 24,
                                     child: CircularProgressIndicator(strokeWidth: 2.5),
                                   );
+                                } else if (file.type.isBuild) {
+                                  if (status == 'installed' && localPath != null) {
+                                    final isSelected = _launch.selected?.command != null && p.equals(_launch.selected!.command, localPath);
+                                    trailingWidget = Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Chip(
+                                          avatar: const Icon(Icons.check, color: Colors.green, size: 16),
+                                          label: Text(tr('Installed'), style: const TextStyle(color: Colors.green)),
+                                          backgroundColor: Colors.transparent,
+                                        ),
+                                        const SizedBox(width: 8),
+                                        ElevatedButton.icon(
+                                          icon: Icon(isSelected ? Icons.check : Icons.play_arrow),
+                                          label: Text(isSelected ? tr('Selected') : tr('Select for launch')),
+                                          style: ElevatedButton.styleFrom(
+                                            backgroundColor: isSelected ? Colors.green.withValues(alpha: 0.2) : Theme.of(context).colorScheme.primary.withValues(alpha: 0.2),
+                                            foregroundColor: isSelected ? Colors.green : Theme.of(context).colorScheme.primary,
+                                            elevation: 0,
+                                            side: BorderSide(color: isSelected ? Colors.green : Theme.of(context).colorScheme.primary, width: 1),
+                                          ),
+                                          onPressed: () {
+                                            final exe = _launch.executables.where((e) => p.equals(e.command, localPath)).firstOrNull;
+                                            if (exe != null) {
+                                              _launch.select(exe.id);
+                                              setState(() {});
+                                            }
+                                          },
+                                        ),
+                                        fileActionsMenu(
+                                          onSelected: (a) async {
+                                            if (a == FileAction.showInFolder) {
+                                              _showInFolder(localPath);
+                                            } else if (a == FileAction.delete) {
+                                              final exe = _launch.executables.where((e) => p.equals(e.command, localPath)).firstOrNull;
+                                              if (exe != null) _launch.removeExecutable(exe.id);
+                                              _installedBuildExes.remove(file.key);
+                                              await _saveInstalledBuilds();
+                                              if (mounted) setState(() {});
+                                            }
+                                          },
+                                        ),
+                                      ],
+                                    );
+                                  } else {
+                                    trailingWidget = ElevatedButton.icon(
+                                      icon: const Icon(Icons.download),
+                                      label: Text(tr('Install build')),
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: Theme.of(context).colorScheme.primary.withValues(alpha: 0.2),
+                                        foregroundColor: Theme.of(context).colorScheme.primary,
+                                        elevation: 0,
+                                        side: BorderSide(color: Theme.of(context).colorScheme.primary, width: 1),
+                                      ),
+                                      onPressed: () => _promptAndInstallBuild(selectedMod!, file),
+                                    );
+                                  }
+                                } else if (file.type == ModFileType.models) {
+                                  if (status == 'ok') {
+                                    trailingWidget = Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Chip(
+                                          avatar: const Icon(Icons.check, color: Colors.green, size: 16),
+                                          label: Text(tr('Models imported'), style: const TextStyle(color: Colors.green)),
+                                          backgroundColor: Colors.transparent,
+                                        ),
+                                        const SizedBox(width: 8),
+                                        ElevatedButton.icon(
+                                          icon: const Icon(Icons.view_in_ar),
+                                          label: Text(tr('Open Models')),
+                                          style: ElevatedButton.styleFrom(
+                                            backgroundColor: Theme.of(context).colorScheme.primary.withValues(alpha: 0.2),
+                                            foregroundColor: Theme.of(context).colorScheme.primary,
+                                            elevation: 0,
+                                            side: BorderSide(color: Theme.of(context).colorScheme.primary, width: 1),
+                                          ),
+                                          onPressed: () => _openSettings(SettingsSection.models),
+                                        ),
+                                        if (localPath != null)
+                                          fileActionsMenu(
+                                            onSelected: (a) => a == FileAction.showInFolder
+                                                ? _showInFolder(localPath)
+                                                : _deleteFiles([localPath], title: tr('Delete "{name}"?', {'name': file.name})),
+                                          ),
+                                      ],
+                                    );
+                                  } else {
+                                    trailingWidget = ElevatedButton.icon(
+                                      icon: const Icon(Icons.download),
+                                      label: Text(tr('Download models')),
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: Theme.of(context).colorScheme.primary.withValues(alpha: 0.2),
+                                        foregroundColor: Theme.of(context).colorScheme.primary,
+                                        elevation: 0,
+                                        side: BorderSide(color: Theme.of(context).colorScheme.primary, width: 1),
+                                      ),
+                                      onPressed: () => _downloadModFile(selectedMod!, file),
+                                    );
+                                  }
                                 } else if (status == 'ok') {
                                   trailingWidget = Row(
                                     mainAxisSize: MainAxisSize.min,

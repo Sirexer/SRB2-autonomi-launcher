@@ -1,6 +1,49 @@
+import 'dart:io';
+
 import '../services/platform_utils.dart';
 import 'game.dart';
 import '../utils/natural_compare.dart';
+
+/// Тип файла из репозитория:
+/// - [addon] — обычный аддон для игры (pk3, wad, lua, soc).
+/// - [models] — набор 3D моделей (zip/pk3).
+/// - [appWindows] — сборка/исполняемый файл для Windows (zip с exe/dll или exe).
+/// - [appLinux] — сборка/исполняемый файл для Linux (бинарник или AppImage).
+enum ModFileType {
+  addon,
+  models,
+  appWindows,
+  appLinux;
+
+  static ModFileType fromString(String? raw) {
+    return switch (raw?.trim().toLowerCase()) {
+      'models' => ModFileType.models,
+      'app_windows' => ModFileType.appWindows,
+      'app_linux' => ModFileType.appLinux,
+      _ => ModFileType.addon,
+    };
+  }
+
+  String get wireName => switch (this) {
+        ModFileType.addon => 'addon',
+        ModFileType.models => 'models',
+        ModFileType.appWindows => 'app_windows',
+        ModFileType.appLinux => 'app_linux',
+      };
+
+  bool isSupportedOnPlatform({bool? isWindows, bool? isLinux}) {
+    final win = isWindows ?? Platform.isWindows;
+    final lin = isLinux ?? Platform.isLinux;
+    return switch (this) {
+      ModFileType.addon => true,
+      ModFileType.models => true,
+      ModFileType.appWindows => win,
+      ModFileType.appLinux => lin,
+    };
+  }
+
+  bool get isBuild => this == ModFileType.appWindows || this == ModFileType.appLinux;
+}
 
 /// Файл аддона. В формате с версиями (index_version 2) у каждого файла
 /// свои `version` и `changelog`; файлы с одинаковой версией — одна версия.
@@ -11,6 +54,7 @@ class ModFile {
   final int size; // размер в байтах (для процентов), 0 — неизвестен
   final String version; // '' — версия не указана
   final String changelog;
+  final ModFileType type;
 
   /// Для каких игр файл (коды [GameDef.id]): `"games": ["srb2", "drrr"]`
   /// у файла или у аддона; по умолчанию — SRB2.
@@ -24,6 +68,7 @@ class ModFile {
     this.version = '',
     this.changelog = '',
     this.games = defaultGames,
+    this.type = ModFileType.addon,
   });
 
   static const defaultGames = ['srb2'];
@@ -65,6 +110,7 @@ class ModFile {
       version: version.isEmpty ? defaultVersion : version,
       changelog: changelog.isEmpty ? defaultChangelog : changelog,
       games: parseGames(json['games']) ?? inheritedGames,
+      type: ModFileType.fromString(json['type'] as String?),
     );
   }
 }
@@ -187,6 +233,7 @@ class ModItem {
   /// Аддон только с файлами для игры [gameId]; null — для неё файлов нет.
   /// [orBase] — и файлы основы (своя игра с `base_addons`).
   ModItem? forGame(String gameId, {String? orBase}) {
+    if (files.isEmpty) return null;
     bool fits(ModFile f) => f.supports(gameId) || (orBase != null && f.supports(orBase));
     if (files.every(fits)) return this;
     final own = [for (final f in files) if (fits(f)) f];
@@ -241,7 +288,12 @@ class ModItem {
   static Map<String, T> _byVersion<T>(dynamic v, T Function(dynamic) parse) =>
       v is Map ? {for (final e in v.entries) '${e.key}'.trim(): parse(e.value)} : const {};
 
-  factory ModItem.fromJson(Map<String, dynamic> json, {required String source}) {
+  factory ModItem.fromJson(
+    Map<String, dynamic> json, {
+    required String source,
+    bool? isWindows,
+    bool? isLinux,
+  }) {
     // Старый формат: одна версия и changelog у всего аддона.
     final legacyVersion = '${json['version'] ?? ''}'.trim();
     final legacyChangelog = json['changelog'] is String ? (json['changelog'] as String).trim() : '';
@@ -258,7 +310,7 @@ class ModItem {
     List<String> gamesFor(String version) => _forVersion(gamesByVersion, version) ?? addonGames;
 
     final rawFiles = json['files'] as List<dynamic>? ?? [];
-    final files = [
+    final allFiles = [
       for (final f in rawFiles)
         if (f is Map<String, dynamic>)
           ModFile.fromJson(f,
@@ -268,6 +320,10 @@ class ModItem {
                 '' => legacyVersion,
                 final v => v,
               })),
+    ];
+    final files = [
+      for (final f in allFiles)
+        if (f.type.isSupportedOnPlatform(isWindows: isWindows, isLinux: isLinux)) f,
     ];
 
     if (files.isEmpty && json['file_hash'] != null) {

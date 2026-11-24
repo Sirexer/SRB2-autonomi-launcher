@@ -1188,5 +1188,21 @@
   "Speed": "Швидкість",
   "Weight": "Вага",
   "Gametype:": "Режим:",
-  "All gametypes": "Усі режими"
+  "All gametypes": "Усі режими",
+  "Install custom build": "Встановити кастомну збірку",
+  "Install build": "Встановити збірку",
+  "Custom game build: {name} ({version})": "Кастомна збірка гри: {name} ({version})",
+  "Custom game build: not installed yet": "Збірка гри: ще не встановлена",
+  "Custom build installed and ready to launch": "Збірка гри встановлена й готова до запуску",
+  "Installation folder": "Папка для встановлення",
+  "Select folder": "Обрати папку",
+  "Build \"{name}\" installed and selected for launch!": "Збірка «{name}» встановлена й обрана для запуску!",
+  "Selected for launch": "Обрано для запуску",
+  "Select for launch": "Обрати для запуску",
+  "Models imported": "Моделі імпортовано",
+  "Download models": "Завантажити моделі",
+  "3D model pack imported": "Набір 3D-моделей імпортовано",
+  "3D model pack: not downloaded yet": "Набір 3D-моделей: ще не завантажено",
+  "Open Models": "Відкрити моделі",
+  "Models for \"{name}\" imported!": "Моделі для «{name}» імпортовано!"
 }

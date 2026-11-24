@@ -1188,5 +1188,21 @@
   "Speed": "Velocidad",
   "Weight": "Peso",
   "Gametype:": "Modo:",
-  "All gametypes": "Todos los modos"
+  "All gametypes": "Todos los modos",
+  "Install custom build": "Instalar compilación personalizada",
+  "Install build": "Instalar compilación",
+  "Custom game build: {name} ({version})": "Compilación personalizada del juego: {name} ({version})",
+  "Custom game build: not installed yet": "Compilación personalizada del juego: aún no instalada",
+  "Custom build installed and ready to launch": "Compilación personalizada instalada y lista para iniciar",
+  "Installation folder": "Carpeta de instalación",
+  "Select folder": "Seleccionar carpeta",
+  "Build \"{name}\" installed and selected for launch!": "¡Compilación «{name}» instalada y seleccionada para iniciar!",
+  "Selected for launch": "Seleccionada para iniciar",
+  "Select for launch": "Seleccionar para iniciar",
+  "Models imported": "Modelos importados",
+  "Download models": "Descargar modelos",
+  "3D model pack imported": "Paquete de modelos 3D importado",
+  "3D model pack: not downloaded yet": "Paquete de modelos 3D: aún no descargado",
+  "Open Models": "Abrir Modelos",
+  "Models for \"{name}\" imported!": "¡Modelos para «{name}» importados!"
 }

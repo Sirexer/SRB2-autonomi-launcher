@@ -1188,5 +1188,21 @@
   "Speed": "Скорость",
   "Weight": "Вес",
   "Gametype:": "Режим:",
-  "All gametypes": "Все режимы"
+  "All gametypes": "Все режимы",
+  "Install custom build": "Установить кастомную сборку",
+  "Install build": "Установить сборку",
+  "Custom game build: {name} ({version})": "Кастомная сборка игры: {name} ({version})",
+  "Custom game build: not installed yet": "Сборка игры: ещё не установлена",
+  "Custom build installed and ready to launch": "Сборка игры установлена и готова к запуску",
+  "Installation folder": "Папка для установки",
+  "Select folder": "Выбрать папку",
+  "Build \"{name}\" installed and selected for launch!": "Сборка «{name}» установлена и выбрана для запуска!",
+  "Selected for launch": "Выбрано для запуска",
+  "Select for launch": "Выбрать для запуска",
+  "Models imported": "Модели импортированы",
+  "Download models": "Скачать модели",
+  "3D model pack imported": "Набор 3D-моделей импортирован",
+  "3D model pack: not downloaded yet": "Набор 3D-моделей: ещё не скачан",
+  "Open Models": "Открыть модели",
+  "Models for \"{name}\" imported!": "Модели для «{name}» импортированы!"
 }

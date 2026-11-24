@@ -3,6 +3,8 @@ import 'dart:io';
 import 'dart:isolate';
 import 'dart:typed_data';
 
+import 'package:path/path.dart' as p;
+
 import '../models/srb2_server.dart';
 
 /// Запись архива аддона: lump в WAD или файл в PK3 (zip).
@@ -321,6 +323,26 @@ class AddonArchive {
       if (e.name == name) return e;
     }
     return null;
+  }
+
+  /// Распаковывает все файлы архива в [targetDir].
+  Future<void> extractTo(String targetDir) async {
+    for (final e in entries) {
+      if (e.name.endsWith('/') || e.path.endsWith('/')) continue;
+      final parts = e.path
+          .replaceAll(r'\', '/')
+          .split('/')
+          .where((seg) => seg.isNotEmpty && seg != '.' && seg != '..')
+          .toList();
+      if (parts.isEmpty) continue;
+      final outPath = p.joinAll([targetDir, ...parts]);
+      final parentDir = Directory(p.dirname(outPath));
+      if (!await parentDir.exists()) {
+        await parentDir.create(recursive: true);
+      }
+      final data = read(e);
+      await File(outPath).writeAsBytes(data, flush: true);
+    }
   }
 
   void close() {

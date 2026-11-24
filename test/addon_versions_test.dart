@@ -218,4 +218,104 @@ void main() {
       expect(list.single.plainTitle, 'Gold Rush!');
     });
   });
+
+  group('mod file types and platform filtering', () {
+    test('ModFileType fromString and properties', () {
+      expect(ModFileType.fromString(null), ModFileType.addon);
+      expect(ModFileType.fromString(''), ModFileType.addon);
+      expect(ModFileType.fromString('addon'), ModFileType.addon);
+      expect(ModFileType.fromString('models'), ModFileType.models);
+      expect(ModFileType.fromString('app_windows'), ModFileType.appWindows);
+      expect(ModFileType.fromString('app_linux'), ModFileType.appLinux);
+      expect(ModFileType.fromString('unknown_type'), ModFileType.addon);
+
+      expect(ModFileType.addon.isBuild, isFalse);
+      expect(ModFileType.models.isBuild, isFalse);
+      expect(ModFileType.appWindows.isBuild, isTrue);
+      expect(ModFileType.appLinux.isBuild, isTrue);
+
+      expect(ModFileType.appWindows.isSupportedOnPlatform(isWindows: true, isLinux: false), isTrue);
+      expect(ModFileType.appWindows.isSupportedOnPlatform(isWindows: false, isLinux: true), isFalse);
+      expect(ModFileType.appLinux.isSupportedOnPlatform(isWindows: true, isLinux: false), isFalse);
+      expect(ModFileType.appLinux.isSupportedOnPlatform(isWindows: false, isLinux: true), isTrue);
+      expect(ModFileType.addon.isSupportedOnPlatform(isWindows: true, isLinux: false), isTrue);
+      expect(ModFileType.addon.isSupportedOnPlatform(isWindows: false, isLinux: true), isTrue);
+      expect(ModFileType.models.isSupportedOnPlatform(isWindows: true, isLinux: false), isTrue);
+      expect(ModFileType.models.isSupportedOnPlatform(isWindows: false, isLinux: true), isTrue);
+    });
+
+    test('ModItem filters files by platform (Windows hides app_linux, Linux hides app_windows)', () {
+      final manifestJson = {
+        'id': 'custom_build_mod',
+        'name': 'Custom Build Mod',
+        'files': [
+          {
+            'name': 'data.pk3',
+            'version': '1.0',
+            'type': 'addon',
+            'hash': 'h1',
+            'md5': 'm1',
+          },
+          {
+            'name': '3d_models.zip',
+            'version': '1.0',
+            'type': 'models',
+            'hash': 'h2',
+            'md5': 'm2',
+          },
+          {
+            'name': 'build_win.zip',
+            'version': '1.0',
+            'type': 'app_windows',
+            'hash': 'h3',
+            'md5': 'm3',
+          },
+          {
+            'name': 'build_linux.AppImage',
+            'version': '1.0',
+            'type': 'app_linux',
+            'hash': 'h4',
+            'md5': 'm4',
+          },
+        ],
+      };
+
+      // On Windows:
+      final modWin = ModItem.fromJson(manifestJson, source: 'Hub', isWindows: true, isLinux: false);
+      expect(modWin.files.map((f) => f.name), ['data.pk3', '3d_models.zip', 'build_win.zip']);
+      expect(modWin.files.any((f) => f.type == ModFileType.appLinux), isFalse);
+      expect(modWin.files.any((f) => f.type == ModFileType.appWindows), isTrue);
+
+      // On Linux:
+      final modLinux = ModItem.fromJson(manifestJson, source: 'Hub', isWindows: false, isLinux: true);
+      expect(modLinux.files.map((f) => f.name), ['data.pk3', '3d_models.zip', 'build_linux.AppImage']);
+      expect(modLinux.files.any((f) => f.type == ModFileType.appWindows), isFalse);
+      expect(modLinux.files.any((f) => f.type == ModFileType.appLinux), isTrue);
+    });
+
+    test('Mod with only Linux build returns null on Windows from forGame', () {
+      final linuxOnlyJson = {
+        'id': 'linux_only',
+        'name': 'Linux Only Game',
+        'files': [
+          {
+            'name': 'srb2_linux',
+            'version': '1.0',
+            'type': 'app_linux',
+            'hash': 'h_lin',
+            'md5': 'm_lin',
+          },
+        ],
+      };
+
+      final modOnWin = ModItem.fromJson(linuxOnlyJson, source: 'Hub', isWindows: true, isLinux: false);
+      expect(modOnWin.files, isEmpty);
+      expect(modOnWin.forGame('srb2'), isNull);
+
+      final modOnLinux = ModItem.fromJson(linuxOnlyJson, source: 'Hub', isWindows: false, isLinux: true);
+      expect(modOnLinux.files, hasLength(1));
+      expect(modOnLinux.forGame('srb2'), isNotNull);
+      expect(modOnLinux.forGame('srb2')!.files.single.type, ModFileType.appLinux);
+    });
+  });
 }

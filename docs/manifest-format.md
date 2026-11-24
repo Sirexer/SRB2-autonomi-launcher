@@ -91,6 +91,7 @@ A file's own `games` wins over the add-on's: in the example above version
 | `size` | no | Size in bytes (for download progress). |
 | `changelog` | no | What changed in this version. |
 | `games` | no | Games this file is for; default as the add-on. |
+| `type` | no | File type: `"addon"` (default), `"models"`, `"app_windows"`, `"app_linux"`. `"models"` is for 3D model packs (imported into model packs library). `"app_windows"` and `"app_linux"` are custom game builds; only the matching build is shown on the user's OS and prompts for an install folder. |
 
 ## Tags
 
