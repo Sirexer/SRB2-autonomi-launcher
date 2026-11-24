@@ -3003,8 +3003,9 @@ class _MainLauncherScreenState extends State<MainLauncherScreen> {
   /// Свои режимы из включённых аддонов очереди (для списка на вкладке Launch).
   Future<List<GametypeInfo>> _queueGametypes() async {
     final files = [for (final e in _activeQueue) _entryPath(e)].where((f) => File(f).existsSync()).toList();
-    final all = await Future.wait(files.map(_contentsOf));
-    return [for (final c in all) ...c.gametypes];
+    if (files.isEmpty) return const [];
+    final map = await _analyzePaths(files);
+    return [for (final f in files) ...?(map[f]?.gametypes)];
   }
 
   Future<void> _setHideNotDownloaded(bool v) async {
@@ -5001,8 +5002,9 @@ class _MainLauncherScreenState extends State<MainLauncherScreen> {
 
   Future<List<CharacterInfo>> _characters() async {
     if (srb2FolderPath == null) return const <CharacterInfo>[];
+    final base = await _gameFiles(_game.baseSkinFiles);
     final files = <String>[
-      ...await _gameFiles(_game.baseSkinFiles),
+      ...base,
       for (final entry in _activeQueue) _entryPath(entry),
     ].where((f) => File(f).existsSync()).toList();
     final stamps = [
@@ -5021,7 +5023,6 @@ class _MainLauncherScreenState extends State<MainLauncherScreen> {
     if (!_characterCache.containsKey(key)) {
       // В журнал: какие файлы игры нашлись — по нему видно, почему у
       // персонажей нет иконок (не нашёлся файл со спрайтами или палитра).
-      final base = await _gameFiles(_game.baseSkinFiles);
       final game = _game;
       unawaited(_characterCache.putIfAbsent(key, () => _scanCharacters(files, palettes)).then((chars) {
         final noIcon = [for (final c in chars) if (c.icon == null) c.name];
@@ -5930,6 +5931,11 @@ class _MainLauncherScreenState extends State<MainLauncherScreen> {
 
   /// Очередь файлов -file (порядок загрузки аддонов).
   Widget _buildQueueList() {
+    var activePos = 0;
+    final activePositions = <String, int>{
+      for (final e in selectedFilesQueue)
+        if (!_disabledQueue.contains(e)) e: ++activePos,
+    };
     return Container(
       decoration: BoxDecoration(
         border: Border.all(color: Colors.grey[700]!),
@@ -5956,7 +5962,7 @@ class _MainLauncherScreenState extends State<MainLauncherScreen> {
                 final entry = selectedFilesQueue[index];
                 final enabled = !_disabledQueue.contains(entry);
                 // Номер — позиция в -file среди включённых.
-                final position = _activeQueue.indexOf(entry) + 1;
+                final position = activePositions[entry] ?? 0;
                 final dim = enabled ? null : Colors.grey;
                 return ListTile(
                   key: ValueKey(entry),

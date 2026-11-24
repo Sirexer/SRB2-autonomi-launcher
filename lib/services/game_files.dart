@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:path/path.dart' as p;
 
@@ -66,12 +67,24 @@ class GameFiles {
       for (final d in searchDirs)
         if ((folder == null || !p.isWithin(folder, d) && !p.equals(folder, d)) && isBuildDir(d, programs, folder)) d,
     ];
-    final out = <String>[];
-    for (final rel in relative) {
-      final path = _find(searchDirs, rel) ?? await _deepFind(roots, p.basename(rel));
-      if (path != null) out.add(path);
+    final out = List<String?>.filled(relative.length, null);
+    final missing = <(int, String)>[];
+    for (var i = 0; i < relative.length; i++) {
+      final rel = relative[i];
+      final direct = _find(searchDirs, rel);
+      if (direct != null) {
+        out[i] = direct;
+      } else {
+        missing.add((i, p.basename(rel)));
+      }
     }
-    return out;
+    if (missing.isNotEmpty) {
+      final deep = await _deepFindAll(roots, [for (final m in missing) m.$2]);
+      for (final (i, name) in missing) {
+        out[i] = deep[name.toLowerCase()];
+      }
+    }
+    return [for (final path in out) ?path];
   }
 
   /// [d] — папка exe сборки или её `data` (не родительская папка сборки).
@@ -85,37 +98,67 @@ class GameFiles {
     return false;
   }
 
-  static final Map<String, Future<String?>> _deepCache = {};
+  static final Map<String, String?> _deepCache = {};
 
-  static Future<String?> _deepFind(List<String> roots, String name) =>
-      _deepCache.putIfAbsent('${roots.join('|')}|${name.toLowerCase()}', () async {
-        final want = name.toLowerCase();
-        Future<String?> walk(Directory dir, int depth) async {
-          final subdirs = <Directory>[];
-          try {
-            await for (final e in dir.list(followLinks: false)) {
-              if (e is File && p.basename(e.path).toLowerCase() == want) return e.path;
-              if (e is Directory && !LocalFileIndex.skippedFolders.contains(p.basename(e.path).toLowerCase())) {
-                subdirs.add(e);
+  /// Ищет все отсутствующие файлы из [names] за один обход в фоновом изоляте,
+  /// чтобы не блокировать цикл событий главного потока при проверке папки игры.
+  static Future<Map<String, String?>> _deepFindAll(List<String> roots, List<String> names) async {
+    final prefix = '${roots.join('|')}|';
+    final result = <String, String?>{};
+    final uncached = <String>{};
+    for (final name in names) {
+      final lower = name.toLowerCase();
+      final key = '$prefix$lower';
+      if (_deepCache.containsKey(key)) {
+        result[lower] = _deepCache[key];
+      } else {
+        uncached.add(lower);
+      }
+    }
+    if (uncached.isEmpty || roots.isEmpty) return result;
+
+    final skipped = LocalFileIndex.skippedFolders;
+    final found = await Isolate.run(() {
+      final hits = <String, String>{};
+      final remaining = Set<String>.from(uncached);
+      void walk(Directory dir, int depth) {
+        if (remaining.isEmpty) return;
+        final subdirs = <Directory>[];
+        try {
+          for (final e in dir.listSync(followLinks: false)) {
+            if (e is File) {
+              final base = p.basename(e.path).toLowerCase();
+              if (remaining.remove(base)) {
+                hits[base] = e.path;
+                if (remaining.isEmpty) return;
               }
+            } else if (e is Directory && depth > 0 && !skipped.contains(p.basename(e.path).toLowerCase())) {
+              subdirs.add(e);
             }
-          } catch (_) {
-            return null;
           }
-          if (depth == 0) return null;
-          for (final d in subdirs) {
-            final found = await walk(d, depth - 1);
-            if (found != null) return found;
-          }
-          return null;
+        } catch (_) {
+          return;
         }
+        for (final d in subdirs) {
+          walk(d, depth - 1);
+          if (remaining.isEmpty) return;
+        }
+      }
 
-        for (final r in roots) {
-          final found = await walk(Directory(r), 5);
-          if (found != null) return found;
-        }
-        return null;
-      });
+      for (final r in roots) {
+        walk(Directory(r), 5);
+        if (remaining.isEmpty) break;
+      }
+      return hits;
+    });
+
+    for (final lower in uncached) {
+      final path = found[lower];
+      _deepCache['$prefix$lower'] = path;
+      result[lower] = path;
+    }
+    return result;
+  }
 
   static String? _find(List<String> dirs, String rel) {
     for (final d in dirs) {

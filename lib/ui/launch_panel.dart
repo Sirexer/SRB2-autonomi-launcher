@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 
 import '../services/app_log.dart';
 import '../i18n.dart';
@@ -42,21 +43,29 @@ class ConsoleRef {
   const ConsoleRef(this.name, this.isVariable, this.args, this.section, this.description);
 
   static Future<List<ConsoleRef>>? _cache;
+  static Map<String, ConsoleRef> _byName = const {};
+
+  static ConsoleRef? find(String name) => _byName[name.toLowerCase()];
 
   static Future<List<ConsoleRef>> load() => _cache ??= () async {
         try {
-          final raw = jsonDecode(await rootBundle.loadString('assets/console_reference.json')) as List;
-          return [
-            for (final j in raw)
-              if (j is Map && j['name'] is String)
-                ConsoleRef(
-                  j['name'] as String,
-                  j['kind'] == 'var',
-                  '${j['args'] ?? ''}',
-                  '${j['section'] ?? ''}',
-                  '${j['desc'] ?? ''}',
-                ),
-          ]..sort((a, b) => a.name.compareTo(b.name));
+          final text = await rootBundle.loadString('assets/console_reference.json');
+          final list = await Isolate.run(() {
+            final raw = jsonDecode(text) as List;
+            return [
+              for (final j in raw)
+                if (j is Map && j['name'] is String)
+                  ConsoleRef(
+                    j['name'] as String,
+                    j['kind'] == 'var',
+                    '${j['args'] ?? ''}',
+                    '${j['section'] ?? ''}',
+                    '${j['desc'] ?? ''}',
+                  ),
+            ]..sort((a, b) => a.name.compareTo(b.name));
+          });
+          _byName = {for (final r in list) r.name.toLowerCase(): r};
+          return list;
         } catch (_) {
           return <ConsoleRef>[];
         }
@@ -200,7 +209,7 @@ class _LaunchOptionsPanelState extends State<LaunchOptionsPanel> {
       _lastColor = _cvar('color');
       _quickRev++;
       _customGametypes = const [];
-      _loadGametypes();
+      if (o.gametype.trim().isNotEmpty && o.warpMap.trim().isNotEmpty) _loadGametypes();
       _warpMapFor = '\u0000';
       _warpMap = null;
       _refreshWarpMap();
@@ -211,7 +220,7 @@ class _LaunchOptionsPanelState extends State<LaunchOptionsPanel> {
   void initState() {
     super.initState();
     s.addListener(_onSettingsChanged);
-    _loadGametypes();
+    if (o.gametype.trim().isNotEmpty && o.warpMap.trim().isNotEmpty) _loadGametypes();
     _refreshWarpMap();
     ConsoleRef.load().then((refs) {
       if (mounted) setState(() => _refs = refs);
@@ -1302,12 +1311,7 @@ class _LaunchOptionsPanelState extends State<LaunchOptionsPanel> {
 
   // --- Консольные команды и переменные (+имя значение) ---
 
-  ConsoleRef? _ref(String name) {
-    for (final r in _refs) {
-      if (r.name.toLowerCase() == name.toLowerCase()) return r;
-    }
-    return null;
-  }
+  ConsoleRef? _ref(String name) => _refs.isEmpty ? null : ConsoleRef.find(name);
 
   void _addConsole(String name, [String value = '']) {
     final n = name.trim().replaceFirst(RegExp(r'^\+'), '');
