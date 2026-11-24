@@ -9,7 +9,6 @@ import 'package:path/path.dart' as p;
 import '../models/game.dart';
 import '../models/srb2_server.dart';
 import '../services/launch_settings.dart';
-import '../services/launch_state.dart';
 import '../services/app_log.dart';
 import '../services/characters.dart';
 import '../services/game_files.dart';
@@ -24,6 +23,7 @@ export '../services/server_downloads.dart' show RepoFileRef;
 import '../services/server_files.dart';
 import '../services/servers_store.dart';
 import '../utils/natural_compare.dart';
+import 'build_split_button.dart';
 import 'snack.dart';
 import 'srb2_text.dart';
 
@@ -1030,80 +1030,16 @@ class _ServersTabState extends State<ServersTab> {
             children: [
               // Составная кнопка: «Подключиться» — сборкой по умолчанию,
               // стрелка — выбрать другую сборку.
-              SizedBox(
-                height: 44,
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Tooltip(
-                      message: _missingDownloadable(info).isEmpty
-                          ? tr('Start the game and connect')
-                          : tr('Download {n} missing addon(s), then connect', {'n': _missingDownloadable(info).length}),
-                      child: ValueListenableBuilder<bool>(
-                        valueListenable: launchPreparing,
-                        builder: (context, preparing, _) => ElevatedButton.icon(
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.green,
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(horizontal: 22),
-                            shape: const RoundedRectangleBorder(
-                              borderRadius: BorderRadius.horizontal(left: Radius.circular(22)),
-                            ),
-                          ),
-                          icon: _joiningKey == row.key || preparing
-                              ? const SizedBox(
-                                  width: 18,
-                                  height: 18,
-                                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                                )
-                              : const Icon(Icons.play_arrow),
-                          label: Text(preparing ? tr('Checking...') : tr('Join'),
-                              style: const TextStyle(fontWeight: FontWeight.bold)),
-                          onPressed: _busy || _joiningKey != null || preparing ? null : () => _join(row),
-                        ),
-                      ),
-                    ),
-                    ListenableBuilder(
-                      listenable: widget.launch,
-                      builder: (context, _) {
-                        final enabled = !_busy && _joiningKey == null && widget.launch.executables.isNotEmpty;
-                        return PopupMenuButton<String>(
-                          tooltip: tr('Join with another build'),
-                          enabled: enabled,
-                          onSelected: (id) => _join(row, executableId: id),
-                          itemBuilder: (context) => [
-                            for (final e in widget.launch.executables)
-                              PopupMenuItem(
-                                value: e.id,
-                                child: ListTile(
-                                  dense: true,
-                                  contentPadding: EdgeInsets.zero,
-                                  leading: Icon(
-                                    widget.launch.isDefault(e) ? Icons.star : Icons.terminal,
-                                    size: 18,
-                                    color: widget.launch.isDefault(e) ? Colors.amber : null,
-                                  ),
-                                  title: Text(e.name),
-                                  subtitle: Text(e.command,
-                                      style: const TextStyle(fontSize: 11), overflow: TextOverflow.ellipsis),
-                                ),
-                              ),
-                          ],
-                          child: Container(
-                            width: 38,
-                            decoration: BoxDecoration(
-                              color: enabled ? Colors.green : Colors.green.withValues(alpha: 0.4),
-                              borderRadius: const BorderRadius.horizontal(right: Radius.circular(22)),
-                              border: Border(left: BorderSide(color: Colors.green.shade900, width: 1)),
-                            ),
-                            child: const Icon(Icons.arrow_drop_down, color: Colors.white),
-                          ),
-                        );
-                      },
-                    ),
-                  ],
-                ),
+              BuildSplitButton(
+                launch: widget.launch,
+                label: tr('Join'),
+                buttonTooltip: _missingDownloadable(info).isEmpty
+                    ? tr('Start the game and connect')
+                    : tr('Download {n} missing addon(s), then connect', {'n': _missingDownloadable(info).length}),
+                menuTooltip: tr('Join with another build'),
+                enabled: !_busy && _joiningKey == null,
+                busy: _joiningKey == row.key,
+                onPressed: (id) => _join(row, executableId: id),
               ),
               const SizedBox(width: 12),
               if (!_busy && _missingDownloadable(info).isNotEmpty)

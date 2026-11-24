@@ -7,8 +7,9 @@ import '../models/game.dart';
 import '../services/app_log.dart';
 import '../services/characters.dart';
 import '../services/game_progress.dart' show formatTics;
-import '../services/launch_state.dart';
+import '../services/launch_settings.dart';
 import '../services/ring_progress.dart';
+import 'build_split_button.dart';
 import 'character_picker.dart';
 import 'save_guard_dialogs.dart';
 import 'srb2_text.dart';
@@ -24,8 +25,11 @@ class RingProgressTab extends StatefulWidget {
   /// Персонажи игры (иконки лучших персонажей кубков и профилей).
   final Future<List<CharacterInfo>> Function() characters;
 
+  /// Сборки игры — для выпадающего меню выбора сборки рядом с «Играть».
+  final LaunchSettings launch;
+
   /// Играть: игра без аддонов и параметров Launch.
-  final void Function(List<String> files) onPlay;
+  final void Function(List<String> files, {String? executableId}) onPlay;
 
   /// «Копии сохранений»: true — какой-то файл заменён копией.
   final Future<bool> Function()? onBackups;
@@ -36,6 +40,7 @@ class RingProgressTab extends StatefulWidget {
     required this.gameFolder,
     required this.gameFiles,
     required this.characters,
+    required this.launch,
     required this.onPlay,
     this.onBackups,
   });
@@ -250,15 +255,13 @@ class _RingProgressTabState extends State<RingProgressTab> {
               children: [
                 Tooltip(
                   message: tr('Start the game without addons and without the Launch parameters, so it saves your progress.'),
-                  child: ValueListenableBuilder<bool>(
-                    valueListenable: launchPreparing,
-                    builder: (context, busy, _) => FilledButton.icon(
-                      icon: busy
-                          ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
-                          : const Icon(Icons.play_arrow),
-                      label: Text(busy ? tr('Checking...') : tr('Play game')),
-                      onPressed: busy ? null : () => widget.onPlay(const []),
-                    ),
+                  child: BuildSplitButton(
+                    launch: widget.launch,
+                    label: tr('Play game'),
+                    height: 40,
+                    horizontalPadding: 18,
+                    dropdownWidth: 34,
+                    onPressed: (exeId) => widget.onPlay(const [], executableId: exeId),
                   ),
                 ),
                 const SizedBox(height: 8),

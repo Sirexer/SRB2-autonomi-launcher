@@ -71,6 +71,8 @@ class SettingsDialog extends StatefulWidget {
   final ValueChanged<bool> onPlayerEnabledChanged;
   final bool progressEnabled;
   final ValueChanged<bool> onProgressEnabledChanged;
+  final bool replaysEnabled;
+  final ValueChanged<bool> onReplaysEnabledChanged;
 
   /// «Защита сохранений» (Experimental).
   final ValueChanged<bool> onSaveProtectionChanged;
@@ -126,6 +128,8 @@ class SettingsDialog extends StatefulWidget {
     required this.onPlayerEnabledChanged,
     required this.progressEnabled,
     required this.onProgressEnabledChanged,
+    required this.replaysEnabled,
+    required this.onReplaysEnabledChanged,
     required this.onSaveProtectionChanged,
     this.progressHidden = const [],
     required this.onProgressUnhide,
@@ -174,6 +178,7 @@ class _SettingsDialogState extends State<SettingsDialog> {
   late bool _versionFolders = widget.versionFolders;
   late bool _playerEnabled = widget.playerEnabled;
   late bool _progressEnabled = widget.progressEnabled;
+  late bool _replaysEnabled = widget.replaysEnabled;
   late final List<String> _progressHidden = List.of(widget.progressHidden);
   late bool _showOther = widget.showOtherDownloads;
   late bool _showFolder = widget.showFolderAddons;
@@ -445,6 +450,17 @@ class _SettingsDialogState extends State<SettingsDialog> {
           subtitle: Text(tr('A Progress tab: single player progress of Sonic Robo Blast 2, SRB2 Legacy and their level '
               'packs (gamedata.dat and the addon\'s own GameData) — play time, records, emblems and secrets, like '
               'Statistics and Record Attack in the game.')),
+        ),
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          value: _replaysEnabled,
+          onChanged: (v) {
+            setState(() => _replaysEnabled = v);
+            widget.onReplaysEnabledChanged(v);
+          },
+          title: Text(tr('Replays')),
+          subtitle: Text(tr('A Replays tab for Sonic Robo Blast 2: browse recorded .lmp replays, import or download '
+              'them into SRB2AL-Replays, inspect maps, characters and required addons, and play them back.')),
         ),
         if (_progressEnabled && _progressHidden.isNotEmpty) ...[
           _hint(tr('Hidden from Progress:')),

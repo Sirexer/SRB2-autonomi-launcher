@@ -33,6 +33,7 @@ import 'services/game_files.dart';
 import 'services/manifest_service.dart';
 import 'services/music.dart';
 import 'services/music_player.dart';
+import 'services/replays.dart';
 import 'services/server_files.dart';
 import 'services/map_preview.dart';
 import 'services/autonomi_service.dart';
@@ -57,6 +58,7 @@ import 'ui/kept_scroll.dart';
 import 'ui/launch_panel.dart';
 import 'ui/player_tab.dart';
 import 'ui/progress_tab.dart';
+import 'ui/replays_tab.dart';
 import 'ui/save_guard_dialogs.dart';
 import 'ui/notifications_button.dart';
 import 'ui/game_icon.dart';
@@ -302,6 +304,9 @@ class _MainLauncherScreenState extends State<MainLauncherScreen> {
   /// Вкладка Progress (экспериментальная) включена.
   bool _progressEnabled = false;
 
+  /// Вкладка Replays (экспериментальная, SRB2 2.2) включена.
+  bool _replaysEnabled = false;
+
   /// Аддоны, скрытые из Progress (имена файлов прогресса).
   final Set<String> _progressHidden = {};
 
@@ -312,8 +317,10 @@ class _MainLauncherScreenState extends State<MainLauncherScreen> {
   /// игры свои (у SRB2 Legacy аддонов в репозиториях нет).
   final Map<String, List<ProgressCandidate>> _progressPacks = {};
 
-  /// Номер вкладки Progress: после Music (если плеер включён); null — выключена.
-  int? get _progressTab => _progressEnabled ? (_playerEnabled ? 4 : 3) : null;
+  /// Номера экспериментальных вкладок; null — вкладка выключена.
+  int? get _playerTab => _playerEnabled ? 3 : null;
+  int? get _progressTab => _progressEnabled ? 3 + (_playerEnabled ? 1 : 0) : null;
+  int? get _replaysTab => _replaysEnabled ? 3 + (_playerEnabled ? 1 : 0) + (_progressEnabled ? 1 : 0) : null;
 
   /// Файлы в папке загрузок, которых нет в репозиториях — скачаны с серверов
   /// (лаунчером или самой игрой), и что в них.
@@ -709,6 +716,7 @@ class _MainLauncherScreenState extends State<MainLauncherScreen> {
         .firstWhere((a) => a.name == prefs.getString('addon_icon_animation'), orElse: () => AddonIconAnimation.all);
     _playerEnabled = prefs.getBool('player_enabled') ?? false;
     _progressEnabled = prefs.getBool('progress_enabled') ?? false;
+    _replaysEnabled = prefs.getBool('replays_enabled') ?? false;
     _progressHidden.addAll(prefs.getStringList('progress_hidden') ?? const []);
     for (final g in Games.all) {
       try {
@@ -877,6 +885,7 @@ class _MainLauncherScreenState extends State<MainLauncherScreen> {
         },
         player: _playerEnabled,
         progress: _progressEnabled,
+        replays: _replaysEnabled,
         saveProtection: SaveGuard.enabled,
       ),
     );
@@ -908,6 +917,7 @@ class _MainLauncherScreenState extends State<MainLauncherScreen> {
     }
     if (choice.player != _playerEnabled) await _setPlayerEnabled(choice.player);
     if (choice.progress != _progressEnabled) await _setProgressEnabled(choice.progress);
+    if (choice.replays != _replaysEnabled) await _setReplaysEnabled(choice.replays);
     if (choice.saveProtection != SaveGuard.enabled) await _setSaveProtection(choice.saveProtection);
     if (!mounted) return;
     _gamesChanged();
@@ -1465,6 +1475,8 @@ class _MainLauncherScreenState extends State<MainLauncherScreen> {
         onPlayerEnabledChanged: _setPlayerEnabled,
         progressEnabled: _progressEnabled,
         onProgressEnabledChanged: _setProgressEnabled,
+        replaysEnabled: _replaysEnabled,
+        onReplaysEnabledChanged: _setReplaysEnabled,
         onSaveProtectionChanged: _setSaveProtection,
         progressHidden: _progressHidden.toList()..sort(),
         onProgressUnhide: (id) => _setProgressHidden(id, false),
@@ -1663,6 +1675,7 @@ class _MainLauncherScreenState extends State<MainLauncherScreen> {
         // Ключ 'Music': 'Player' уже занят («Игрок» в параметрах запуска).
         if (_playerEnabled) tr('Music'),
         if (_progressEnabled) tr('Progress'),
+        if (_replaysEnabled) tr('Replays'),
       ];
 
   /// Где плеер ищет музыку: файлы игры, затем скачанные аддоны.
@@ -1715,11 +1728,16 @@ class _MainLauncherScreenState extends State<MainLauncherScreen> {
 
   /// Мини-плеер внизу окна на вкладках, кроме самого плеера.
   Widget _withMiniPlayer(Widget body) {
-    if (!_playerEnabled || _currentTab == 3) return body;
+    if (!_playerEnabled || _currentTab == _playerTab) return body;
     return Column(
       children: [
         Expanded(child: body),
-        MiniPlayer(player: _player, onOpen: () => setState(() => _currentTab = 3)),
+        MiniPlayer(
+          player: _player,
+          onOpen: () {
+            if (_playerTab case final tab?) setState(() => _currentTab = tab);
+          },
+        ),
       ],
     );
   }
@@ -1764,11 +1782,13 @@ class _MainLauncherScreenState extends State<MainLauncherScreen> {
 
   Future<void> _setPlayerEnabled(bool v) async {
     setState(() {
-      // Вкладка Progress сдвигается вместе с Music.
+      // Вкладки Progress и Replays сдвигаются вместе с Music.
       final onProgress = _currentTab == _progressTab;
-      if (!v && _currentTab == 3 && !onProgress) _currentTab = 0;
+      final onReplays = _currentTab == _replaysTab;
+      if (!v && _currentTab == _playerTab) _currentTab = 0;
       _playerEnabled = v;
       if (onProgress) _currentTab = _progressTab!;
+      if (onReplays) _currentTab = _replaysTab!;
     });
     if (!v) _player.shutdown();
     final prefs = await SharedPreferences.getInstance();
@@ -1777,11 +1797,23 @@ class _MainLauncherScreenState extends State<MainLauncherScreen> {
 
   Future<void> _setProgressEnabled(bool v) async {
     setState(() {
+      // Вкладка Replays сдвигается вместе с Progress.
+      final onReplays = _currentTab == _replaysTab;
       if (!v && _currentTab == _progressTab) _currentTab = 0;
       _progressEnabled = v;
+      if (onReplays) _currentTab = _replaysTab!;
     });
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('progress_enabled', v);
+  }
+
+  Future<void> _setReplaysEnabled(bool v) async {
+    setState(() {
+      if (!v && _currentTab == _replaysTab) _currentTab = 0;
+      _replaysEnabled = v;
+    });
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('replays_enabled', v);
   }
 
   Future<void> _setSaveProtection(bool v) async {
@@ -2122,23 +2154,49 @@ class _MainLauncherScreenState extends State<MainLauncherScreen> {
         connectTo == null ? launchedFiles : (serverFiles ?? const <String>[]));
   }
 
-  /// Играть в левелпак (вкладка Progress): сборка по умолчанию и только
-  /// файлы пака — без параметров Launch, очереди, сетевой игры и -warp, чтобы
-  /// игра сохраняла прогресс как обычно.
-  Future<void> _playPack(List<String> files) => _preparingLaunch(() => _playPackNow(files));
+  /// Играть в левелпак (вкладка Progress): сборка по умолчанию или
+  /// выбранная из меню и только файлы пака — без параметров Launch,
+  /// очереди, сетевой игры и -warp, чтобы игра сохраняла прогресс как обычно.
+  Future<void> _playPack(List<String> files, {String? executableId}) =>
+      _preparingLaunch(() => _playDirectNow(files, executableId: executableId));
 
-  Future<void> _playPackNow(List<String> files) async {
+  Future<void> _playReplay(String playdemoArg, List<String> files, {String? executableId}) =>
+      _preparingLaunch(() => _playDirectNow(files, executableId: executableId, playdemoArg: playdemoArg));
+
+  Future<void> _playDirectNow(List<String> files, {String? executableId, String? playdemoArg}) async {
     if (!await _ensureGameFolder()) return;
     final folder = srb2FolderPath!;
-    var parts = PlatformUtils.splitCommandLine(_launch.command);
+    final rawCmd = _launch.byId(executableId)?.command ?? _launch.command;
+    var parts = PlatformUtils.splitCommandLine(rawCmd);
     if (parts.isEmpty) parts = [PlatformUtils.defaultLaunchCommand(game: _game)];
-    final isDefault = _launch.command.trim() == PlatformUtils.defaultLaunchCommand(game: _game);
+    final isDefault = rawCmd.trim() == PlatformUtils.defaultLaunchCommand(game: _game);
     final executable = await _resolveExecutable(parts.first, isDefault: isDefault);
     final args = [
       ...parts.skip(1),
       if (files.isNotEmpty) ...['-file', ...files.map((x) => _gameRelative(folder, x))],
+      if (playdemoArg != null) ...['-playdemo', playdemoArg],
     ];
     await _startGame(executable, args, folder, files);
+  }
+
+  /// Поиск локальных аддонов для реплея по имени и MD5 в папке игры.
+  Future<Map<String, String>> _resolveReplayAddons(List<ReplayAddon> addons) async {
+    final folder = srb2FolderPath;
+    if (folder == null || addons.isEmpty) return const {};
+    final index = await LocalFileIndex.shared(folder);
+    final result = <String, String>{};
+    for (final addon in addons) {
+      if (addon.md5.isEmpty) continue;
+      final found = await index.findByName(addon.name, addon.md5);
+      if (found != null) result[addon.md5] = found;
+    }
+    return result;
+  }
+
+  /// Поиск отсутствующего аддона реплея в подключённых репозиториях по MD5.
+  (ModItem, ModFile)? _findRepoReplayAddon(ReplayAddon addon) {
+    if (addon.md5.isEmpty) return null;
+    return _repoFilesByMd5()[addon.md5.toLowerCase()];
   }
 
   /// Запускает игру и показывает ошибку запуска.
@@ -4133,13 +4191,32 @@ class _MainLauncherScreenState extends State<MainLauncherScreen> {
         ],
       ),
       body: _withMiniPlayer(
-          _currentTab == _progressTab && _game.id == 'drrr'
+          _currentTab == _replaysTab
+          ? ReplaysTab(
+              key: ValueKey('replays:${_game.id}:$srb2FolderPath'),
+              game: _game,
+              gameFolder: srb2FolderPath,
+              launch: _launch,
+              gameFiles: _gameFiles,
+              resolveLocalAddons: _resolveReplayAddons,
+              findRepoAddon: _findRepoReplayAddon,
+              onDownloadAddon: (mod, file) async {
+                final ok = await _downloadModFile(mod, file);
+                if (ok && srb2FolderPath != null) {
+                  await LocalFileIndex.shared(srb2FolderPath!, force: true);
+                }
+                return ok;
+              },
+              onPlay: _playReplay,
+            )
+          : _currentTab == _progressTab && _game.id == 'drrr'
           ? RingProgressTab(
               key: ValueKey('progress:drrr:$_savesVersion'),
               game: _game,
               gameFolder: srb2FolderPath,
               gameFiles: _gameFiles,
               characters: _characters,
+              launch: _launch,
               onPlay: _playPack,
               onBackups: SaveGuard.enabled ? _openSaveBackups : null,
             )
@@ -4152,6 +4229,7 @@ class _MainLauncherScreenState extends State<MainLauncherScreen> {
               candidates: _progressCandidates,
               hidden: _progressHidden,
               onHide: (id) => _setProgressHidden(id, true),
+              launch: _launch,
               onPlay: _playPack,
               onAddPack: _addProgressPack,
               onEditPack: (pack, files) => _storeProgressPack(pack.title, files, replacing: pack.files),
@@ -4159,7 +4237,7 @@ class _MainLauncherScreenState extends State<MainLauncherScreen> {
               onRemovePack: _removeProgressPack,
               onBackups: SaveGuard.enabled ? _openSaveBackups : null,
             )
-          : _currentTab == 3 && _playerEnabled
+          : _currentTab == _playerTab
           ? PlayerTab(
               key: const ValueKey('player'),
               player: _player,

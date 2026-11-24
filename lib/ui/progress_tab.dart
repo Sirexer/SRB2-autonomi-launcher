@@ -12,9 +12,10 @@ import 'package:path/path.dart' as p;
 import '../i18n.dart';
 import '../models/game.dart';
 import '../services/game_progress.dart';
+import '../services/launch_settings.dart';
 import '../services/map_preview.dart';
-import '../services/launch_state.dart';
 import '../services/platform_utils.dart';
+import 'build_split_button.dart';
 import 'save_guard_dialogs.dart';
 import 'srb2_text.dart';
 
@@ -37,9 +38,12 @@ class ProgressTab extends StatefulWidget {
   final Set<String> hidden;
   final void Function(String id) onHide;
 
+  /// Сборки игры — для выпадающего меню выбора сборки рядом с «Играть».
+  final LaunchSettings launch;
+
   /// Играть: игра только с этими файлами (пусто — ванильная), без
   /// параметров Launch и -warp — так игра сохраняет прогресс.
-  final void Function(List<String> files) onPlay;
+  final void Function(List<String> files, {String? executableId}) onPlay;
 
   /// «Add Map Pack»: добавить левелпак из файлов на диске (у SRB2 Legacy
   /// аддонов в репозиториях нет); id добавленного пака или null.
@@ -64,6 +68,7 @@ class ProgressTab extends StatefulWidget {
     required this.candidates,
     required this.hidden,
     required this.onHide,
+    required this.launch,
     required this.onPlay,
     this.onAddPack,
     this.isManual,
@@ -266,15 +271,14 @@ class _ProgressTabState extends State<ProgressTab> {
   }
 
   /// «Играть»; пока запуск готовится (проверка сохранений) — «Checking…».
-  Widget _playButton(VoidCallback? onPressed) => ValueListenableBuilder<bool>(
-        valueListenable: launchPreparing,
-        builder: (context, busy, _) => FilledButton.icon(
-          icon: busy
-              ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
-              : const Icon(Icons.play_arrow),
-          label: Text(busy ? tr('Checking...') : tr('Play game')),
-          onPressed: busy ? null : onPressed,
-        ),
+  Widget _playButton(List<String> files, {bool enabled = true}) => BuildSplitButton(
+        launch: widget.launch,
+        label: tr('Play game'),
+        enabled: enabled,
+        height: 40,
+        horizontalPadding: 18,
+        dropdownWidth: 34,
+        onPressed: (exeId) => widget.onPlay(files, executableId: exeId),
       );
 
   /// Значки прохождения в списке: пройдена, на 100%, в Ultimate.
@@ -531,7 +535,7 @@ class _ProgressTabState extends State<ProgressTab> {
                       ? tr('Start the game without addons and without the Launch parameters, so it saves your progress.')
                       : tr('Start the game with only this level pack: no Launch parameters, no other addons and no '
                           '-warp, so the game saves your progress.'),
-                  child: _playButton(pack.orphan ? null : () => widget.onPlay(pack.files)),
+                  child: _playButton(pack.files, enabled: !pack.orphan),
                 ),
                 const SizedBox(height: 10),
                 FilterChip(

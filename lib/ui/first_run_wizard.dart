@@ -31,6 +31,7 @@ class FirstRunChoice {
 
   final bool player;
   final bool progress;
+  final bool replays;
   final bool saveProtection;
 
   const FirstRunChoice({
@@ -41,6 +42,7 @@ class FirstRunChoice {
     required this.paths,
     required this.player,
     required this.progress,
+    required this.replays,
     required this.saveProtection,
   });
 }
@@ -67,6 +69,7 @@ class FirstRunWizard extends StatefulWidget {
 
   final bool player;
   final bool progress;
+  final bool replays;
   final bool saveProtection;
 
   const FirstRunWizard({
@@ -79,6 +82,7 @@ class FirstRunWizard extends StatefulWidget {
     required this.executableOf,
     required this.player,
     required this.progress,
+    this.replays = false,
     required this.saveProtection,
   });
 
@@ -124,6 +128,7 @@ class _FirstRunWizardState extends State<FirstRunWizard> {
 
   late bool _player = widget.player;
   late bool _progress = widget.progress;
+  late bool _replays = widget.replays;
   late bool _saveProtection = widget.saveProtection;
 
   _Step get _step => _steps[_index];
@@ -233,6 +238,7 @@ class _FirstRunWizardState extends State<FirstRunWizard> {
         },
         player: _player,
         progress: _progress,
+        replays: _replays,
         saveProtection: _saveProtection,
       ),
     );
@@ -533,6 +539,14 @@ class _FirstRunWizardState extends State<FirstRunWizard> {
           subtitle: Text(tr('A Progress tab: single player progress of Sonic Robo Blast 2, SRB2 Legacy and their level '
               'packs (gamedata.dat and the addon\'s own GameData) — play time, records, emblems and secrets, like '
               'Statistics and Record Attack in the game.')),
+        ),
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          value: _replays,
+          onChanged: (v) => setState(() => _replays = v),
+          title: Text(tr('Replays')),
+          subtitle: Text(tr('A Replays tab for Sonic Robo Blast 2: browse recorded .lmp replays, import or download '
+              'them into SRB2AL-Replays, inspect maps, characters and required addons, and play them back.')),
         ),
         SwitchListTile(
           contentPadding: EdgeInsets.zero,
