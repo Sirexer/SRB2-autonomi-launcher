@@ -637,13 +637,14 @@ class MusicScanner {
       if (a.isZip) {
         for (final e in a.entries) {
           final inMusic = e.lowerPath.startsWith('music/');
+          // В PK3 музыка либо в папке music/, либо в корне с префиксом O_/D_
+          final isRoot = !e.path.contains('/') && !e.path.contains('\\');
           final prefixed = e.name.startsWith('O_') || e.name.startsWith('D_');
-          if (!inMusic && !prefixed) continue;
+          if (!inMusic && !(isRoot && prefixed)) continue;
           if (e.name == 'MUSICDEF' || e.size == 0) continue;
           final name = musicName(e.name);
           var format = formatFromExtension(_ext(e.path));
           if (format == MusicFormat.unknown) format = _sniff(a, e);
-          if (format == MusicFormat.unknown && e.name.startsWith('D_')) format = MusicFormat.midi;
           // Нераспознанное — не музыка (или формат, который не сыграть): не показываем.
           if (format == MusicFormat.unknown) continue;
           if (seen.add(e.path)) {
@@ -666,7 +667,6 @@ class MusicScanner {
           final prefixed = e.name.startsWith('O_') || e.name.startsWith('D_');
           if ((!inMarkers && !prefixed) || e.size == 0) continue;
           var format = _sniff(a, e);
-          if (format == MusicFormat.unknown && e.name.startsWith('D_')) format = MusicFormat.midi;
           // В WAD имена lump могут повторяться — запись различаем по номеру.
           if (format == MusicFormat.unknown) continue;
           out.add((path, '#$i', musicName(e.name), format));

@@ -147,6 +147,7 @@ void main() {
       ('Music/Zone1/O_THZ1.ogg', fakeOgg({'LOOPMS': '1500'})),
       ('Music/D_FUN.mid', fakeMidi()),
       ('Sounds/DSJUMP.ogg', fakeOgg({})), // не музыка
+      ('Textures/AltDashPad/D_0_MN1.lmp', ascii.encode('Doom patch texture data')), // текстура с D_, не музыка
     ]));
     final tracks = MusicScanner.scan([wad, pk3]);
     expect(tracks.map((t) => t.lump), ['GFZ1', 'BOSS', 'INTRO', 'THZ1', 'FUN']);
