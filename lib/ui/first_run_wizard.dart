@@ -545,8 +545,9 @@ class _FirstRunWizardState extends State<FirstRunWizard> {
           value: _replays,
           onChanged: (v) => setState(() => _replays = v),
           title: Text(tr('Replays')),
-          subtitle: Text(tr('A Replays tab for Sonic Robo Blast 2: browse recorded .lmp replays, import or download '
-              'them into SRB2AL-Replays, inspect maps, characters and required addons, and play them back.')),
+          subtitle: Text(tr('A Replays tab for SRB2, SRB2 Legacy, SRB2Kart, Ring Racers and compatible forks: browse '
+              'recorded .lmp replays, import or download them into SRB2AL-Replays, inspect maps, characters and required '
+              'addons, and play them back.')),
         ),
         SwitchListTile(
           contentPadding: EdgeInsets.zero,

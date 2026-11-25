@@ -171,6 +171,42 @@ WAD (`ZWAD`, LZF) читаются.
 `GameData` файла кэшируется, пока файл не изменится. Копии — в
 `save_backups/<игра>-<код папки>/`, повреждённые — в `save_backups/Damaged`.
 
+## Реплеи
+
+`lib/services/replays.dart`, `lib/ui/replays_tab.dart`. При сканировании у
+каждого `.lmp` читаются только первые 16 КиБ и последние 8 КиБ.
+
+- **SRB2 2.2 / SRB2 Legacy 2.1** (`\xf0SRB2Replay\x0f`): `version`/`subversion`,
+  `demoVersion`, контрольная сумма MD5 в `0x10..0x1F` (от `0x20..EOF`),
+  `PLAY`, `uint16 mapNumber`. При `demoVersion >= 16` в `0x37` хранится
+  таблица аддонов (`uint16`, далее `cstr name` + 16-байтный MD5), затем время,
+  счёт, кольца, имя игрока, скин и цвет. Для `demoVersion < 16` (2.1 и ранние
+  2.2) аддоны подбираются по имени подпапки через `MainCfg → GameData` в SOC
+  или по имени архива (`resolveAddonsByFolder`).
+- **SRB2Kart** (`\xf0KartReplay\x0f`, `version < 2`): `title[64]`, MD5 в
+  `0x50..0x5F` (по `0x60..checksumEnd`, где `checksumEnd` — сразу после
+  последнего `\xff\x80` или `length - 1`), `PLAY`, `uint16 mapNumber`,
+  `mapmd5[16]`, `demoflags`, `gametype` (0 Race, 1 Battle), `uint8 numAddons` в
+  `0x78` (`cstr name` + 16-байтный MD5). В Time Attack время, netvars и игрок
+  читаются из заголовка; в завершённых сетевых заездах итоги победителя
+  (16-байтные имя, скин, цвет и `uint32` время/счёт) идут после `\xff\x80`.
+- **Ring Racers** (`\xf0KartReplay\x0f`, `version >= 2`): `title[64]`, MD5 в
+  `0x50..0x5F`, `PLAY`, `cstr mapName`, `mapmd5[16]`, `demoflags[2]`,
+  `cstr gametype`, байт флагов, `uint8 numAddons`, `uint8 nSkins` (`16 + 6`
+  байт на скин) и блок UBJSON `standings` в конце файла.
+- **BlanKart** (`\xf0BlanReplay\x0f`, `version 2`): `title[64]`, 64-битный
+  чексум XXH3-64 LE в `0x50..0x57` (по `0x60..pos(\xff\x80)+2`), `PLAY`,
+  `cstr mapName`, `maphash[8]`, `demoflags`, `cstr gametype` (и строки
+  сервера/MOTD при `demoVersion >= 11`), `uint8 numAddons` (в записи:
+  `cstr name`, 8-байтный XXH3-64 и байт `compatMode`) и итоги после `\xff\x80`
+  (`cstr` при `demoVersion > 12`).
+- **Патчинг заголовка (`SRB2AL-Replays/temp/replay.lmp`)**: вместо `-force`
+  при изменении набора аддонов, подключении доп. аддонов или использовании
+  файла с диска с отличающейся суммой (`exact == false` через
+  `LocalFileIndex.firstByName`) `ReplayScanner.prepareTempReplay` перезаписывает
+  таблицу аддонов и пересчитывает контрольную сумму заголовка. Папка `temp/`
+  игнорируется сканером.
+
 ## 3D-модели
 
 `lib/services/model_packs.dart`, `model_mesh.dart`; Настройки → Модели
@@ -192,8 +228,12 @@ WAD (`ZWAD`, LZF) читаются.
   (`adjustTextureCoords`).
 - **Библиотека**: `model_packs/<игра>/<набор>/pack.json` + `files/` (только
   файлы из списка, в написании из списка); `setup.json` — порядок,
-  выключенные наборы, ручной выбор. Внутри набора действует последняя строка
-  с именем (как в игре).
+  выключенные наборы, ручной выбор. Архивы моделей из репозиториев скачиваются
+  в `models/<игра>/<набор>/<версия>/` в папке данных лаунчера (а не в
+  `DOWNLOAD` игры). Поддерживаются вложенные папки, пути с `\` в `.zip`,
+  несколько версий в одном архиве и разбор `README` / `Read Please!.txt` через
+  `ModelDat.extractFromReadme`, если `.dat` не найден. Внутри набора действует
+  последняя строка с именем (как в игре).
 - **Сборка**: выбранная версия каждого имени; путь сохраняется, совпадение с
   файлом другого набора — в `P<n>/…`, слишком длинный — `P<n>/<файл>` или
   `P<n>/M<k>.md3`. Установка: файлы копируются в `<папка>.srb2al-new`, старые
@@ -273,5 +313,6 @@ Windows — именованный mutex в `windows/runner/main.cpp`; Linux —
 | `games/` | Иконки своих игр |
 | `save_backups/` | Копии сохранений |
 | `model_packs/` | Наборы моделей (Настройки → Модели) |
+| `models/` | Архивы моделей из репозиториев |
 | `logs/launcher.log` | Журнал |
 | `antd/` | Демон Autonomi |

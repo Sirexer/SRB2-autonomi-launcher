@@ -2198,16 +2198,24 @@ class _MainLauncherScreenState extends State<MainLauncherScreen> {
     await _startGame(executable, args, folder, files);
   }
 
-  /// Поиск локальных аддонов для реплея по имени и MD5 в папке игры.
-  Future<Map<String, String>> _resolveReplayAddons(List<ReplayAddon> addons) async {
+  /// Поиск локальных аддонов для реплея в папке игры: сначала по имени и контрольной сумме,
+  /// затем по точному имени файла (если на диске установлена другая версия официального пака/аддона).
+  Future<Map<String, ReplayResolvedAddon>> _resolveReplayAddons(List<ReplayAddon> addons) async {
     final folder = srb2FolderPath;
     if (folder == null || addons.isEmpty) return const {};
     final index = await LocalFileIndex.shared(folder);
-    final result = <String, String>{};
+    final result = <String, ReplayResolvedAddon>{};
     for (final addon in addons) {
       if (addon.md5.isEmpty) continue;
-      final found = await index.findByName(addon.name, addon.md5);
-      if (found != null) result[addon.md5] = found;
+      final exact = await index.findByName(addon.name, addon.md5);
+      if (exact != null) {
+        result[addon.md5] = (path: exact, exact: true);
+      } else {
+        final byName = index.firstByName(addon.name);
+        if (byName != null) {
+          result[addon.md5] = (path: byName, exact: false);
+        }
+      }
     }
     return result;
   }
@@ -2216,6 +2224,54 @@ class _MainLauncherScreenState extends State<MainLauncherScreen> {
   (ModItem, ModFile)? _findRepoReplayAddon(ReplayAddon addon) {
     if (addon.md5.isEmpty) return null;
     return _repoFilesByMd5()[addon.md5.toLowerCase()];
+  }
+
+  /// Поиск локальных аддонов для папок реплеев старого формата (GameData / имя файла).
+  Future<Map<String, List<String>>> _resolveReplayFolderAddons(List<String> folders) async {
+    final root = srb2FolderPath;
+    if (root == null || folders.isEmpty) return const {};
+    final index = await LocalFileIndex.shared(root);
+    final own = {for (final x in _game.ownAddonFiles) x.toLowerCase()};
+    final progress = await _progressCandidates();
+    final candidatePacks = <List<String>>[
+      for (final c in progress) c.files,
+    ];
+    final allLocal = <String>[
+      for (final path in index.paths)
+        if (!own.contains(p.basename(path).toLowerCase()) &&
+            (path.toLowerCase().endsWith('.pk3') || path.toLowerCase().endsWith('.wad')))
+          path,
+    ];
+    return ReplayScanner.resolveAddonsByFolder(
+      folders: folders,
+      candidatePacks: candidatePacks,
+      allLocalAddons: allLocal,
+    );
+  }
+
+  /// Поиск аддона в репозиториях по имени папки реплея (если не найден локально).
+  (ModItem, ModFile)? _findRepoReplayFolderAddon(String folder) {
+    final fl = folder.toLowerCase();
+    final fc = ReplayScanner.normalizeMatchKey(fl);
+    if (fl.isEmpty) return null;
+    for (final mods in _visibleGroups.values) {
+      for (final mod in mods) {
+        final addonFiles = [for (final f in mod.files) if (f.type == ModFileType.addon) f];
+        if (addonFiles.isEmpty) continue;
+        final modCore = ReplayScanner.normalizeMatchKey(mod.name);
+        final modMatches = mod.name.toLowerCase().contains(fl) ||
+            (fc.length >= 4 && (modCore == fc || modCore.contains(fc)));
+        if (modMatches) return (mod, addonFiles.first);
+        for (final f in addonFiles) {
+          final fn = f.name.toLowerCase();
+          final fnCore = ReplayScanner.normalizeMatchKey(fn);
+          if (fn.contains(fl) || (fc.length >= 4 && (fnCore == fc || fnCore.contains(fc)))) {
+            return (mod, f);
+          }
+        }
+      }
+    }
+    return null;
   }
 
   /// Запускает игру и показывает ошибку запуска.
@@ -4295,7 +4351,9 @@ class _MainLauncherScreenState extends State<MainLauncherScreen> {
               launch: _launch,
               gameFiles: _gameFiles,
               resolveLocalAddons: _resolveReplayAddons,
+              resolveFolderAddons: _resolveReplayFolderAddons,
               findRepoAddon: _findRepoReplayAddon,
+              findRepoFolderAddon: _findRepoReplayFolderAddon,
               onDownloadAddon: (mod, file) async {
                 final ok = await _downloadModFile(mod, file);
                 if (ok && srb2FolderPath != null) {

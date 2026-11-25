@@ -33,11 +33,15 @@ Platforms: **Windows x64**, **Linux x86_64** (AppImage) and **Linux ARM64**
   MP3, MIDI (SoundFont or a MIDI device), tracker modules and console music.
 - **Progress** (experimental) — single player progress, records and emblems,
   like the game's Statistics.
+- **Replays** (experimental) — browse `.lmp` replays across SRB2, SRB2
+  Legacy, SRB2Kart, Ring Racers and BlanKart, import from disk or URL,
+  inspect maps/characters/add-ons, add extra add-ons and launch playback.
 - **Save protection** (experimental) — a whole copy of every save, restored if
   the file gets damaged.
-- **3D models** — several model packs put together into one: pick the
-  version of each model in a 3D preview, install to the game with a backup
-  and roll back, or save as `.zip`.
+- **3D models** — download repository model packs or add local ones, put
+  several packs together into one (including multiple versions per archive),
+  pick the version of each model in a 3D preview, install to the game with a
+  backup and roll back, or save as `.zip`.
 - **Themes** — colors, background pictures, fonts, corners, window opacity.
 - **Updates** — new releases are offered and installed by the launcher.
 - Six languages: English, Russian, Ukrainian, German, Spanish, Portuguese.
@@ -73,7 +77,7 @@ A short wizard asks for:
 2. the add-on repository from `pointer.txt` next to the launcher;
 3. which games to show and their folders and executables (found ones are
    filled in);
-4. experimental features: music player, progress, save protection.
+4. experimental features: music player, progress, replays, save protection.
 
 Everything can be changed later in Settings.
 
@@ -89,7 +93,7 @@ Everything can be changed later in Settings.
 
 | For | Read |
 |---|---|
-| Players | [Games](docs/guide/games.md) · [Addons](docs/guide/addons.md) · [Launch](docs/guide/launch.md) · [Servers](docs/guide/servers.md) · [Player](docs/guide/player.md) · [Progress](docs/guide/progress.md) · [Save protection](docs/guide/save-protection.md) · [Settings](docs/guide/settings.md) |
+| Players | [Games](docs/guide/games.md) · [Addons](docs/guide/addons.md) · [Launch](docs/guide/launch.md) · [Servers](docs/guide/servers.md) · [Player](docs/guide/player.md) · [Progress](docs/guide/progress.md) · [Replays](docs/guide/replays.md) · [Save protection](docs/guide/save-protection.md) · [Settings](docs/guide/settings.md) |
 | Theme makers | [Themes](docs/themes.md) |
 | Repository authors | [Repository format](docs/manifest-format.md) |
 | Fork authors | [Custom games](docs/custom-games.md) |

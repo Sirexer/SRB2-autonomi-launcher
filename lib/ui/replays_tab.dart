@@ -30,11 +30,17 @@ class ReplaysTab extends StatefulWidget {
   /// Файлы игры по относительным путям (карты, скины, палитры).
   final Future<List<String>> Function(List<String> relative) gameFiles;
 
-  /// Поиск аддонов из заголовка реплея на диске по MD5: возвращает `md5 -> path`.
-  final Future<Map<String, String>> Function(List<ReplayAddon> addons) resolveLocalAddons;
+  /// Поиск аддонов из заголовка реплея на диске по хешу и имени: возвращает `hash -> (path, exact)`.
+  final Future<Map<String, ReplayResolvedAddon>> Function(List<ReplayAddon> addons) resolveLocalAddons;
+
+  /// Поиск аддонов для старого формата реплеев (`demoversion < 16`) по имени папки (GameData / имя файла).
+  final Future<Map<String, List<String>>> Function(List<String> folders)? resolveFolderAddons;
 
   /// Поиск отсутствующего аддона в подключённых репозиториях по MD5.
   final (ModItem, ModFile)? Function(ReplayAddon addon) findRepoAddon;
+
+  /// Поиск аддона в репозиториях по имени папки реплея (если не найден локально).
+  final (ModItem, ModFile)? Function(String folder)? findRepoFolderAddon;
 
   /// Скачать отсутствующий аддон из репозитория Autonomi.
   final Future<bool> Function(ModItem mod, ModFile file) onDownloadAddon;
@@ -54,7 +60,9 @@ class ReplaysTab extends StatefulWidget {
     required this.launch,
     required this.gameFiles,
     required this.resolveLocalAddons,
+    this.resolveFolderAddons,
     required this.findRepoAddon,
+    this.findRepoFolderAddon,
     required this.onDownloadAddon,
     this.extraAddons = const [],
     required this.onExtraAddonsChanged,
@@ -75,7 +83,8 @@ class _ReplaysTabState extends State<ReplaysTab> {
 
   List<ReplayGroup> _groups = const [];
   bool _loading = false;
-  Map<String, String> _localAddonsByMd5 = const {};
+  Map<String, ReplayResolvedAddon> _localAddonsByMd5 = const {};
+  Map<String, List<String>> _folderAddons = const {};
 
   // Кэш превью карт и скинов по набору локальных файлов аддонов (очередь по 1 изоляту за раз).
   final Map<String, Future<Map<String, MapPreview>>> _mapsCache = {};
@@ -109,7 +118,11 @@ class _ReplaysTabState extends State<ReplaysTab> {
     super.dispose();
   }
 
-  bool get _supported => widget.game.engine == 'srb2';
+  bool get _supported =>
+      widget.game.engine == 'srb2' ||
+      widget.game.engine == 'srb2legacy' ||
+      widget.game.engine == 'srb2kart' ||
+      widget.game.engine == 'drrr';
 
   Future<void> _reload() async {
     final folder = widget.gameFolder;
@@ -118,6 +131,7 @@ class _ReplaysTabState extends State<ReplaysTab> {
         setState(() {
           _groups = const [];
           _localAddonsByMd5 = const {};
+          _folderAddons = const {};
           _loading = false;
         });
       }
@@ -129,18 +143,27 @@ class _ReplaysTabState extends State<ReplaysTab> {
       final files = await ReplayScanner.scanInBackground(folder);
       final groups = ReplayScanner.groupDuplicates(files);
       final uniqueAddons = <String, ReplayAddon>{};
+      final legacyFolders = <String>{};
       for (final g in groups) {
-        for (final a in g.primary.addons) {
+        final r = g.primary;
+        for (final a in r.addons) {
           if (a.md5.isNotEmpty) uniqueAddons.putIfAbsent(a.md5, () => a);
+        }
+        if (r.validHeader && !r.supportsEmbeddedAddons && r.addons.isEmpty && r.folder.isNotEmpty && r.folder != 'main' && !r.isImported) {
+          legacyFolders.add(r.folder);
         }
       }
       final resolved = uniqueAddons.isEmpty
-          ? const <String, String>{}
+          ? const <String, ReplayResolvedAddon>{}
           : await widget.resolveLocalAddons(uniqueAddons.values.toList());
+      final resolvedFolders = legacyFolders.isEmpty || widget.resolveFolderAddons == null
+          ? const <String, List<String>>{}
+          : await widget.resolveFolderAddons!(legacyFolders.toList());
       if (!mounted || widget.gameFolder != folder) return;
       setState(() {
         _groups = groups;
         _localAddonsByMd5 = resolved;
+        _folderAddons = resolvedFolders;
         _loading = false;
         if (_selectedFolder != _allFoldersKey &&
             !groups.any((g) => g.primary.folder == _selectedFolder)) {
@@ -152,10 +175,20 @@ class _ReplaysTabState extends State<ReplaysTab> {
     }
   }
 
-  List<String> _resolvedAddonPaths(ReplayFile r) => [
-        for (final a in r.addons)
-          if (_localAddonsByMd5[a.md5] case final path?) path,
+  List<String> _resolvedAddonPaths(ReplayFile r) {
+    if (r.addons.isNotEmpty) {
+      return [
+        for (final a in r.addons) ?_localAddonsByMd5[a.md5]?.path,
       ];
+    }
+    if (r.validHeader && !r.supportsEmbeddedAddons && r.folder.isNotEmpty && r.folder != 'main' && !r.isImported) {
+      return [
+        for (final path in _folderAddons[r.folder] ?? const <String>[])
+          if (File(path).existsSync()) path,
+      ];
+    }
+    return const [];
+  }
 
   Future<Map<String, MapPreview>> _mapsFor(List<String> addonPaths) {
     final key = addonPaths.join('\u0000');
@@ -514,7 +547,7 @@ class _ReplaysTabState extends State<ReplaysTab> {
                 final picked = await openFiles(
                   initialDirectory: _defaultAddonBrowseDir(),
                   acceptedTypeGroups: [
-                    XTypeGroup(label: 'SRB2 Addon', extensions: const ['lua', 'pk3', 'wad', 'soc']),
+                    XTypeGroup(label: 'SRB2 Addon', extensions: const ['lua', 'pk3', 'wad', 'kart', 'soc']),
                   ],
                 );
                 if (picked.isEmpty) return;
@@ -543,7 +576,8 @@ class _ReplaysTabState extends State<ReplaysTab> {
     final recorded = <(ReplayAddon addon, String? localPath, bool checked)>[
       for (final a in replay.addons)
         () {
-          final lp = _localAddonsByMd5[a.md5];
+          final resolved = _localAddonsByMd5[a.md5];
+          final lp = resolved?.path;
           final ok = lp != null && File(lp).existsSync();
           return (a, ok ? lp : null, ok);
         }(),
@@ -553,9 +587,19 @@ class _ReplaysTabState extends State<ReplaysTab> {
         if (r.$2 != null) p.normalize(r.$2!).toLowerCase(),
     };
     final custom = <(String path, bool checked)>[
-      for (final pth in _enabledExtraAddonPaths())
-        if (!recordedSet.contains(p.normalize(pth).toLowerCase())) (pth, true),
+      if (!replay.supportsEmbeddedAddons && replay.addons.isEmpty && replay.folder.isNotEmpty && replay.folder != 'main' && !replay.isImported)
+        for (final pth in _folderAddons[replay.folder] ?? const <String>[])
+          if (File(pth).existsSync() && !recordedSet.contains(p.normalize(pth).toLowerCase())) ...[
+            (pth, true),
+          ],
     ];
+    final preAdded = {
+      ...recordedSet,
+      for (final c in custom) p.normalize(c.$1).toLowerCase(),
+    };
+    for (final pth in _enabledExtraAddonPaths()) {
+      if (preAdded.add(p.normalize(pth).toLowerCase())) custom.add((pth, true));
+    }
 
     final launch = await showDialog<bool>(
       context: context,
@@ -569,9 +613,11 @@ class _ReplaysTabState extends State<ReplaysTab> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  tr('Choose which addons to load with this replay. Modified launches are saved to {temp}.', {
-                    'temp': p.join(ReplayScanner.importedFolder, ReplayScanner.tempFolder, ReplayScanner.tempReplayName),
-                  }),
+                  replay.supportsEmbeddedAddons
+                      ? tr('Choose which addons to load with this replay. Modified launches are saved to {temp}.', {
+                          'temp': p.join(ReplayScanner.importedFolder, ReplayScanner.tempFolder, ReplayScanner.tempReplayName),
+                        })
+                      : tr('Choose which addons to load with this replay.'),
                   style: const TextStyle(fontSize: 12, color: Colors.grey),
                 ),
                 const SizedBox(height: 10),
@@ -646,7 +692,7 @@ class _ReplaysTabState extends State<ReplaysTab> {
                 final picked = await openFiles(
                   initialDirectory: _defaultAddonBrowseDir(),
                   acceptedTypeGroups: [
-                    XTypeGroup(label: 'SRB2 Addon', extensions: const ['lua', 'pk3', 'wad', 'soc']),
+                    XTypeGroup(label: 'SRB2 Addon', extensions: const ['lua', 'pk3', 'wad', 'kart', 'soc']),
                   ],
                 );
                 if (picked.isEmpty) return;
@@ -688,14 +734,16 @@ class _ReplaysTabState extends State<ReplaysTab> {
     final missing = <ReplayAddon>[];
     final files = <String>[];
     var usedExtras = false;
+    var hashMismatch = false;
 
     if (editedFiles != null) {
       files.addAll(editedFiles);
-    } else {
+    } else if (replay.addons.isNotEmpty) {
       for (final a in replay.addons) {
-        final path = _localAddonsByMd5[a.md5];
-        if (path != null && File(path).existsSync()) {
-          files.add(path);
+        final resolved = _localAddonsByMd5[a.md5];
+        if (resolved != null && File(resolved.path).existsSync()) {
+          files.add(resolved.path);
+          if (!resolved.exact) hashMismatch = true;
         } else {
           missing.add(a);
         }
@@ -747,12 +795,74 @@ class _ReplaysTabState extends State<ReplaysTab> {
           if (!mounted) return;
           files.clear();
           missing.clear();
+          hashMismatch = false;
           for (final a in replay.addons) {
-            final path = _localAddonsByMd5[a.md5];
-            if (path != null && File(path).existsSync()) {
-              files.add(path);
+            final resolved = _localAddonsByMd5[a.md5];
+            if (resolved != null && File(resolved.path).existsSync()) {
+              files.add(resolved.path);
+              if (!resolved.exact) hashMismatch = true;
             } else {
               missing.add(a);
+            }
+          }
+        }
+      }
+
+      final seen = {for (final f in files) p.normalize(f).toLowerCase()};
+      for (final extra in _enabledExtraAddonPaths()) {
+        if (seen.add(p.normalize(extra).toLowerCase())) {
+          files.add(extra);
+          usedExtras = true;
+        }
+      }
+    } else {
+      // Старый формат (например SRB2 Legacy или 2.2.0–2.2.12): список аддонов берём по имени папки.
+      if (replay.validHeader && replay.folder.isNotEmpty && replay.folder != 'main' && !replay.isImported) {
+        final matched = [
+          for (final pth in _folderAddons[replay.folder] ?? const <String>[])
+            if (File(pth).existsSync()) pth,
+        ];
+        if (matched.isNotEmpty) {
+          files.addAll(matched);
+        } else if (widget.findRepoFolderAddon?.call(replay.folder) case final repoMatch?) {
+          final (mod, file) = repoMatch;
+          final action = await showDialog<String>(
+            context: context,
+            builder: (ctx) => AlertDialog(
+              icon: const Icon(Icons.warning_amber_rounded, color: Colors.orangeAccent, size: 36),
+              title: Text(tr('Missing replay addons')),
+              content: SizedBox(
+                width: 480,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(tr('This replay belongs to "{folder}", which was not found on your disk:',
+                        {'folder': replay.folder})),
+                    const SizedBox(height: 8),
+                    Text('• ${mod.name} — ${file.name}',
+                        style: const TextStyle(fontFamily: 'monospace', fontSize: 12)),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(onPressed: () => Navigator.of(ctx).pop('cancel'), child: Text(tr('Cancel'))),
+                ElevatedButton.icon(
+                  icon: const Icon(Icons.download),
+                  label: Text(tr('Download ({n})', {'n': 1})),
+                  onPressed: () => Navigator.of(ctx).pop('download'),
+                ),
+                TextButton(onPressed: () => Navigator.of(ctx).pop('anyway'), child: Text(tr('Launch anyway'))),
+              ],
+            ),
+          );
+          if (action == null || action == 'cancel' || !mounted) return;
+          if (action == 'download') {
+            await widget.onDownloadAddon(mod, file);
+            await _reload();
+            if (!mounted) return;
+            for (final pth in _folderAddons[replay.folder] ?? const <String>[]) {
+              if (File(pth).existsSync()) files.add(pth);
             }
           }
         }
@@ -769,8 +879,8 @@ class _ReplaysTabState extends State<ReplaysTab> {
 
     var playdemoArg = replay.relativePlayPath;
     final needsTemp = replay.validHeader &&
-        replay.demoVersion >= 16 &&
-        (editedFiles != null || missing.isNotEmpty || usedExtras || files.length != replay.addons.length);
+        replay.supportsEmbeddedAddons &&
+        (editedFiles != null || missing.isNotEmpty || usedExtras || hashMismatch || files.length != replay.addons.length);
     if (needsTemp) {
       try {
         playdemoArg = await ReplayScanner.prepareTempReplay(
@@ -792,6 +902,7 @@ class _ReplaysTabState extends State<ReplaysTab> {
   String _kindLabel(ReplayKind kind) => switch (kind) {
         ReplayKind.last => tr('Last'),
         ReplayKind.timeBest => tr('Best Time'),
+        ReplayKind.lapBest => tr('Best Lap'),
         ReplayKind.scoreBest => tr('Best Score'),
         ReplayKind.ringsBest => tr('Best Rings'),
         ReplayKind.custom => tr('Saved'),
@@ -800,6 +911,7 @@ class _ReplaysTabState extends State<ReplaysTab> {
   Color _kindColor(ReplayKind kind) => switch (kind) {
         ReplayKind.last => Colors.blueGrey,
         ReplayKind.timeBest => Colors.cyan,
+        ReplayKind.lapBest => Colors.purpleAccent,
         ReplayKind.scoreBest => Colors.amber,
         ReplayKind.ringsBest => Colors.orange,
         ReplayKind.custom => Colors.green,
@@ -818,12 +930,14 @@ class _ReplaysTabState extends State<ReplaysTab> {
     for (final g in _groups) {
       counts.update(g.primary.folder, (n) => n + 1, ifAbsent: () => 1);
     }
+    const primaryFolders = {'main', 'kart', 'ringracers', 'timeattack'};
     final keys = counts.keys.toList()
       ..sort((a, b) {
         if (a == ReplayScanner.importedFolder) return -1;
         if (b == ReplayScanner.importedFolder) return 1;
-        if (a == 'main') return -1;
-        if (b == 'main') return 1;
+        final ap = primaryFolders.contains(a);
+        final bp = primaryFolders.contains(b);
+        if (ap != bp) return ap ? -1 : 1;
         if (a.isEmpty) return -1;
         if (b.isEmpty) return 1;
         return naturalCompare(a, b);
@@ -838,9 +952,11 @@ class _ReplaysTabState extends State<ReplaysTab> {
         if ((_selectedFolder == _allFoldersKey || g.primary.folder == _selectedFolder) &&
             (q.isEmpty ||
                 g.primary.mapName.toLowerCase().contains(q) ||
+                g.primary.title.toLowerCase().contains(q) ||
                 g.primary.playerName.toLowerCase().contains(q) ||
                 g.primary.skin.toLowerCase().contains(q) ||
                 g.primary.folder.toLowerCase().contains(q) ||
+                (_folderAddons[g.primary.folder]?.any((pth) => pth.toLowerCase().contains(q)) ?? false) ||
                 g.primary.addons.any((a) => a.name.toLowerCase().contains(q)) ||
                 g.variants.any((v) => v.fileName.toLowerCase().contains(q))))
           g,
@@ -854,7 +970,7 @@ class _ReplaysTabState extends State<ReplaysTab> {
         child: Padding(
           padding: const EdgeInsets.all(24),
           child: Text(
-            tr('Replays tab currently supports Sonic Robo Blast 2 (2.2) only.'),
+            tr('Replays tab supports Sonic Robo Blast 2, SRB2 Legacy, SRB2Kart, Ring Racers and compatible forks only.'),
             style: const TextStyle(color: Colors.grey, fontSize: 15),
           ),
         ),
@@ -1152,6 +1268,11 @@ class _ReplaysTabState extends State<ReplaysTab> {
                                         ),
                                       ),
                                     ),
+                                  if (r.isKart && r.gametype.isNotEmpty)
+                                    Text(r.gametype, style: const TextStyle(fontSize: 11, color: Colors.grey)),
+                                  if (r.isKart && r.title.isNotEmpty)
+                                    srb2Text(srb2TitleSpans(r.title),
+                                        style: const TextStyle(fontSize: 11, color: Colors.grey)),
                                 ],
                               ),
                             )
@@ -1191,7 +1312,7 @@ class _ReplaysTabState extends State<ReplaysTab> {
                     }
                   },
                   itemBuilder: (context) => [
-                    if (r.validHeader && r.demoVersion >= 16)
+                    if (r.validHeader)
                       PopupMenuItem(
                         value: 'edit_addons',
                         child: ListTile(
@@ -1238,13 +1359,47 @@ class _ReplaysTabState extends State<ReplaysTab> {
                   for (final a in r.addons) _buildAddonChip(a, theme),
                 ],
               ),
-            ] else if (r.validHeader && r.demoVersion < 16 && r.folder != 'main' && r.folder != ReplayScanner.importedFolder) ...[
+            ] else if (r.validHeader && !r.supportsEmbeddedAddons && r.folder != 'main' && r.folder != ReplayScanner.importedFolder) ...[
               const SizedBox(height: 6),
-              Text(
-                tr('Older replay format ({ver}): addon list is not stored inside the file.',
-                    {'ver': r.versionLabel}),
-                style: const TextStyle(fontSize: 11, color: Colors.grey),
-              ),
+              if (_folderAddons[r.folder] case final detected? when detected.isNotEmpty)
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: [
+                    for (final path in detected)
+                      Tooltip(
+                        message: tr('Detected by folder "{folder}"', {'folder': r.folder}),
+                        child: Chip(
+                          visualDensity: VisualDensity.compact,
+                          avatar: const Icon(Icons.check_circle, size: 15, color: Colors.green),
+                          label: Text(p.basename(path), style: const TextStyle(fontSize: 11)),
+                        ),
+                      ),
+                  ],
+                )
+              else if (widget.findRepoFolderAddon?.call(r.folder) case final repoMatch?)
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: [
+                    ActionChip(
+                      visualDensity: VisualDensity.compact,
+                      avatar: Icon(Icons.download, size: 15, color: theme.colorScheme.primary),
+                      label: Text('${repoMatch.$2.name} (${repoMatch.$1.name})',
+                          style: const TextStyle(fontSize: 11)),
+                      onPressed: () async {
+                        await widget.onDownloadAddon(repoMatch.$1, repoMatch.$2);
+                        await _reload();
+                      },
+                    ),
+                  ],
+                )
+              else
+                Text(
+                  tr('Older replay format ({ver}): addon list is not stored inside the file.',
+                      {'ver': r.versionLabel}),
+                  style: const TextStyle(fontSize: 11, color: Colors.grey),
+                ),
             ],
           ],
         ),
@@ -1253,12 +1408,23 @@ class _ReplaysTabState extends State<ReplaysTab> {
   }
 
   Widget _buildAddonChip(ReplayAddon a, ThemeData theme) {
-    final localPath = _localAddonsByMd5[a.md5];
-    if (localPath != null) {
-      return Chip(
-        visualDensity: VisualDensity.compact,
-        avatar: const Icon(Icons.check_circle, size: 15, color: Colors.green),
-        label: Text(a.name, style: const TextStyle(fontSize: 11)),
+    final resolved = _localAddonsByMd5[a.md5];
+    if (resolved != null) {
+      if (resolved.exact) {
+        return Chip(
+          visualDensity: VisualDensity.compact,
+          avatar: const Icon(Icons.check_circle, size: 15, color: Colors.green),
+          label: Text(a.name, style: const TextStyle(fontSize: 11)),
+        );
+      }
+      return Tooltip(
+        message: tr('Different version on disk ({path}) — replay header will be updated',
+            {'path': p.basename(resolved.path)}),
+        child: Chip(
+          visualDensity: VisualDensity.compact,
+          avatar: const Icon(Icons.check_circle, size: 15, color: Colors.amber),
+          label: Text(a.name, style: const TextStyle(fontSize: 11)),
+        ),
       );
     }
     final repoMatch = widget.findRepoAddon(a);

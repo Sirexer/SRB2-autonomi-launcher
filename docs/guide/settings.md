@@ -8,7 +8,7 @@ All settings are in the **Settings** window (the gear at the top). The shared
 sections come first: **General** (language, theme, Autonomi, launcher build,
 updates, data), **Games** (which games are in the switcher, custom games),
 **Addons** (hidden tags, tags on the add-on page, repository updates, list
-sections), **Experimental** (player, progress, save protection). Below, under
+sections), **Experimental** (player, progress, replays, save protection). Below, under
 the **game** picker, are the game's sections: **Game folder**, **Launch**
 (executables), **Servers** and [**Models**](#3d-models). The game can be picked right in the window —
 it does not change the launcher's current game. The settings buttons on the
@@ -24,7 +24,7 @@ A wizard is shown once:
 3. **games** — which to show and which custom games to add from
    `another_games.json`; then, optionally, the folder and executable of each
    game (found ones are filled in);
-4. **experimental features** — player, progress, save protection.
+4. **experimental features** — player, progress, replays, save protection.
 
 ## Game folder
 
@@ -54,11 +54,14 @@ Models are shown only with the game's OpenGL renderer.
 
 SRB2 Legacy (2.1) reads only MD2 models: MD3 ones are left out of its pack.
 
-- **Packs.** Add a `.zip` (or a folder) with the list and the models folder.
-  A pack made to be unpacked straight into `models/` (the list next to
-  folders like `LFMAIN/`, no `models/` folder) works too: then the paths
-  start next to the list. The game's current models can be added as a pack
-  too (**Add as a pack**).
+- **Packs.** Add a `.zip` (or a folder) with the list and the models folder,
+  or download a model pack from a repository (downloaded into launcher data
+  `models/<game>/` and added to your packs automatically). Archives with the
+  list in a nested subfolder, multiple versions in one archive, or unpacked
+  straight into `models/` (next to folders like `LFMAIN/`, no `models/` folder),
+  and packs whose paths are listed only in a `README` (`Read Please!.txt`)
+  when `models.dat` is missing are supported too. The game's current models
+  can be added as a pack (**Add as a pack**).
   Only the files named in the list are kept — the rest is reported. Packs are
   stored by the launcher, each on its own.
 - **Order.** When packs have a model with the same name (two Sonics), the

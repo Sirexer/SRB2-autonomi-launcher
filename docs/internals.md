@@ -181,6 +181,42 @@ end; save slots also by the `version N` line and the `0x1d` end marker). The
 `GameData` found in a file is cached until the file changes. Copies are in
 `save_backups/<game>-<folder code>/`, damaged files in `save_backups/Damaged`.
 
+## Replays
+
+`lib/services/replays.dart`, `lib/ui/replays_tab.dart`. Only a 16 KiB head and
+an 8 KiB tail of each `.lmp` are read during scanning.
+
+- **SRB2 2.2 / SRB2 Legacy 2.1** (`\xf0SRB2Replay\x0f`): version `version`/`subversion`,
+  `demoVersion`, MD5 checksum `0x10..0x1F` (over `0x20..EOF`), `PLAY`, `uint16 mapNumber`.
+  For `demoVersion >= 16`, a `uint16` add-on table (`cstr name` + 16-byte MD5)
+  sits at `0x37`, followed by time, score, rings, player name, skin and color.
+  For `demoVersion < 16` (2.1 and early 2.2), local/repository add-ons are
+  matched by the replay subfolder against `MainCfg → GameData` in SOC or by
+  archive filename (`resolveAddonsByFolder`).
+- **SRB2Kart** (`\xf0KartReplay\x0f`, `version < 2`): `title[64]`, MD5 checksum
+  `0x50..0x5F` (over `0x60..checksumEnd`, where `checksumEnd` is right after the
+  last `\xff\x80` tic terminator or `length - 1`), `PLAY`, `uint16 mapNumber`,
+  `mapmd5[16]`, `demoflags`, `gametype` (0 Race, 1 Battle), `uint8 numAddons`
+  at `0x78` (`cstr name` + 16-byte MD5). Time Attack reads time/netvars/player
+  from the header; finished network replays read winner standings (fixed 16-byte
+  name, skin, color + `uint32` time/score) after `\xff\x80`.
+- **Ring Racers** (`\xf0KartReplay\x0f`, `version >= 2`): `title[64]`, MD5
+  checksum `0x50..0x5F`, `PLAY`, `cstr mapName`, `mapmd5[16]`, `demoflags[2]`,
+  `cstr gametype`, flags byte, `uint8 numAddons`, `uint8 nSkins` (`16 + 6`
+  bytes per skin) and an EOF UBJSON `standings` object.
+- **BlanKart** (`\xf0BlanReplay\x0f`, `version 2`): `title[64]`, 64-bit
+  XXH3-64 LE checksum `0x50..0x57` (over `0x60..pos(\xff\x80)+2`), `PLAY`,
+  `cstr mapName`, `maphash[8]`, `demoflags`, `cstr gametype` (+ server/MOTD
+  strings for `demoVersion >= 11`), `uint8 numAddons` where each entry stores
+  `cstr name`, 8-byte XXH3-64 hash and a `compatMode` byte, plus standings after
+  `\xff\x80` (`cstr` fields for `demoVersion > 12`).
+- **Header patching (`SRB2AL-Replays/temp/replay.lmp`)**: because `-force` is
+  unreliable on mod-gated demos, when the user toggles add-ons, enables Extra
+  add-ons or uses a local file with a different checksum (`exact == false` via
+  `LocalFileIndex.firstByName`), `ReplayScanner.prepareTempReplay` rewrites
+  the recorded add-on table and recomputes the format-specific header checksum.
+  `temp/` is skipped by the scanner.
+
 ## 3D models
 
 `lib/services/model_packs.dart`, `model_mesh.dart`; Settings → Models
@@ -201,8 +237,12 @@ end; save slots also by the `version N` line and the `0x1d` end marker). The
   model (`adjustTextureCoords`).
 - **Library**: `model_packs/<game>/<pack>/pack.json` + `files/` (only files
   from the list, spelled as in the list); `setup.json` — order, disabled
-  packs, manual choices. In a pack the last line with a name wins (as in the
-  game).
+  packs, manual choices. Repository model archives are downloaded to
+  `models/<game>/<pack>/<version>/` in the launcher data directory (not the
+  game's `DOWNLOAD`). Both deep/backslash `.zip` paths and archives with
+  multiple versioned folders/lists are supported; if no `.dat` file is present,
+  `ModelDat.extractFromReadme` can parse model entries from `README` /
+  `Read Please!.txt`. In a pack the last line with a name wins (as in the game).
 - **Build**: the chosen version of each name; the path is kept, a clash with
   another pack's file goes to `P<n>/…`, a too long path to `P<n>/<file>` or
   `P<n>/M<k>.md3`. Install: files are copied to `<folder>.srb2al-new`, the old
@@ -284,5 +324,6 @@ session bus). `--new-instance` skips it.
 | `games/` | Icons of custom games |
 | `save_backups/` | Save copies |
 | `model_packs/` | Model packs (Settings → Models) |
+| `models/` | Repository model archives |
 | `logs/launcher.log` | Log |
 | `antd/` | Autonomi daemon |

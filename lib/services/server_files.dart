@@ -73,10 +73,10 @@ class LocalFileIndex {
     return null;
   }
 
-  /// Путь к файлу с именем [name] и MD5 [md5] (пустой MD5 — любой) или null.
-  Future<String?> findByName(String name, String md5) async {
+  /// Путь к файлу с именем [name] и контрольной суммой [hash] (MD5 или XXH3-64; пустая — любой).
+  Future<String?> findByName(String name, String hash) async {
     for (final path in _byName[name.toLowerCase()] ?? const <String>[]) {
-      if (md5.isEmpty || await md5Of(path) == md5.toLowerCase()) return path;
+      if (hash.isEmpty || await hashOf(path, hash) == hash.toLowerCase()) return path;
     }
     return null;
   }

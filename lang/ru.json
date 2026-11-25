@@ -1235,7 +1235,6 @@
   "All replays": "Все реплеи",
   "Vanilla (main)": "Ванильная игра (main)",
   "replay (root)": "replay (корень)",
-  "Replays tab currently supports Sonic Robo Blast 2 (2.2) only.": "Вкладка «Реплеи» пока поддерживает только Sonic Robo Blast 2 (2.2).",
   "Search map, player, addon...": "Поиск карты, игрока, аддона...",
   "From disk...": "С диска...",
   "From URL...": "По ссылке...",
@@ -1248,7 +1247,6 @@
   "Older replay format ({ver}): addon list is not stored inside the file.": "Старый формат реплея ({ver}): список аддонов не хранится внутри файла.",
   "Missing": "Отсутствует",
   "Replays": "Реплеи",
-  "A Replays tab for Sonic Robo Blast 2: browse recorded .lmp replays, import or download them into SRB2AL-Replays, inspect maps, characters and required addons, and play them back.": "Вкладка «Реплеи» для Sonic Robo Blast 2: просмотр записанных повторов .lmp, импорт и скачивание в SRB2AL-Replays, карты, персонажи, нужные аддоны и запуск воспроизведения.",
   "Play with another build": "Запустить через другую сборку",
   "Failed to import models: {error}": "Не удалось добавить модели в наборы: {error}",
   "{game}: 3D models are not supported": "{game}: 3D-модели не поддерживаются",
@@ -1263,5 +1261,12 @@
   "No addons selected.": "Аддоны не выбраны.",
   "Extra addons": "Доп. аддоны",
   "Extra addons ({n})": "Доп. аддоны ({n})",
-  "Edit addons & play...": "Настроить аддоны и запустить..."
+  "Edit addons & play...": "Настроить аддоны и запустить...",
+  "Choose which addons to load with this replay.": "Выберите, какие аддоны загружать с этим реплеем.",
+  "Detected by folder \"{folder}\"": "Определён по папке «{folder}»",
+  "This replay belongs to \"{folder}\", which was not found on your disk:": "Этот реплей относится к аддону «{folder}», который не найден на диске:",
+  "Best Lap": "Лучший круг",
+  "Replays tab supports Sonic Robo Blast 2, SRB2 Legacy, SRB2Kart, Ring Racers and compatible forks only.": "Вкладка «Реплеи» поддерживает только Sonic Robo Blast 2, SRB2 Legacy, SRB2Kart, Ring Racers и совместимые форки.",
+  "A Replays tab for SRB2, SRB2 Legacy, SRB2Kart, Ring Racers and compatible forks: browse recorded .lmp replays, import or download them into SRB2AL-Replays, inspect maps, characters and required addons, and play them back.": "Вкладка «Реплеи» для SRB2, SRB2 Legacy, SRB2Kart, Ring Racers и совместимых форков: просмотр записанных повторов .lmp, импорт и скачивание в SRB2AL-Replays, карты, персонажи, аддоны и запуск воспроизведения.",
+  "Different version on disk ({path}) — replay header will be updated": "На диске другая версия ({path}) — заголовок реплея будет обновлён"
 }

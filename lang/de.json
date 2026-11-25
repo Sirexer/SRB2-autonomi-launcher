@@ -1235,7 +1235,6 @@
   "All replays": "Alle Wiederholungen",
   "Vanilla (main)": "Basisspiel (main)",
   "replay (root)": "replay (Stammverzeichnis)",
-  "Replays tab currently supports Sonic Robo Blast 2 (2.2) only.": "Der Reiter „Wiederholungen“ unterstützt derzeit nur Sonic Robo Blast 2 (2.2).",
   "Search map, player, addon...": "Karte, Spieler, Addon suchen...",
   "From disk...": "Von Datenträger...",
   "From URL...": "Über URL...",
@@ -1248,7 +1247,6 @@
   "Older replay format ({ver}): addon list is not stored inside the file.": "Älteres Wiederholungsformat ({ver}): Die Addon-Liste ist nicht in der Datei gespeichert.",
   "Missing": "Fehlt",
   "Replays": "Wiederholungen",
-  "A Replays tab for Sonic Robo Blast 2: browse recorded .lmp replays, import or download them into SRB2AL-Replays, inspect maps, characters and required addons, and play them back.": "Ein Reiter „Wiederholungen“ für Sonic Robo Blast 2: aufgezeichnete .lmp-Wiederholungen durchsuchen, nach SRB2AL-Replays importieren oder herunterladen, Karten, Charaktere und benötigte Addons prüfen und abspielen.",
   "Play with another build": "Mit anderem Build starten",
   "Failed to import models: {error}": "Modelle konnten nicht importiert werden: {error}",
   "{game}: 3D models are not supported": "{game}: 3D-Modelle werden nicht unterstützt",
@@ -1263,5 +1261,12 @@
   "No addons selected.": "Keine Addons ausgewählt.",
   "Extra addons": "Zusatz-Addons",
   "Extra addons ({n})": "Zusatz-Addons ({n})",
-  "Edit addons & play...": "Addons bearbeiten & abspielen..."
+  "Edit addons & play...": "Addons bearbeiten & abspielen...",
+  "Choose which addons to load with this replay.": "Wählen Sie, welche Addons mit dieser Wiederholung geladen werden.",
+  "Detected by folder \"{folder}\"": "Über Ordner „{folder}“ erkannt",
+  "This replay belongs to \"{folder}\", which was not found on your disk:": "Diese Wiederholung gehört zu „{folder}“, das nicht auf der Festplatte gefunden wurde:",
+  "Best Lap": "Beste Runde",
+  "Replays tab supports Sonic Robo Blast 2, SRB2 Legacy, SRB2Kart, Ring Racers and compatible forks only.": "Der Tab „Wiederholungen“ unterstützt nur Sonic Robo Blast 2, SRB2 Legacy, SRB2Kart, Ring Racers und kompatible Forks.",
+  "A Replays tab for SRB2, SRB2 Legacy, SRB2Kart, Ring Racers and compatible forks: browse recorded .lmp replays, import or download them into SRB2AL-Replays, inspect maps, characters and required addons, and play them back.": "Ein Tab „Wiederholungen“ für SRB2, SRB2 Legacy, SRB2Kart, Ring Racers und kompatible Forks: aufgezeichnete .lmp-Wiederholungen durchsuchen, in SRB2AL-Replays importieren oder herunterladen, Karten, Charaktere und benötigte Addons ansehen und abspielen.",
+  "Different version on disk ({path}) — replay header will be updated": "Andere Version auf dem Datenträger ({path}) — Replay-Header wird aktualisiert"
 }
