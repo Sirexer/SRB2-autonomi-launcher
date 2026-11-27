@@ -1749,5 +1749,6 @@
   "Gamepad controls ({game}, Player {p})": "Controles del mando ({game}, Jugador {p})",
   "Tilt a stick, press a trigger, D-Pad or gamepad button...": "Inclina un stick, pulsa un gatillo, D-Pad o botón del mando...",
   "Trigger deadzone": "Zona muerta de gatillos",
-  "In the root folder": "En la carpeta raíz"
+  "In the root folder": "En la carpeta raíz",
+  "Super color: cannot be selected for launch": "Supercolor: no se puede seleccionar para iniciar"
 }

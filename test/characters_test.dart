@@ -373,6 +373,39 @@ void main() {
     expect([for (final c in chars) (c.name, c.realname)], [('skin', 'Nobody'), ('hinote', 'hinote')]);
     expect(chars[1].prefColor, 'purple');
   });
+
+  test('super/inaccessible colors parse accessible flag and group into pulse animation', () {
+    final soc = CharacterScanner.parseSocColorDefs(
+      'SKINCOLOR SKINCOLOR_SUPERNEON1\nNAME = Super Neon 1\nRAMP = 1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1\nACCESSIBLE = false\n\n'
+      'SKINCOLOR SKINCOLOR_SUPERNEON2\nNAME = Super Neon 2\nRAMP = 2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2\nACCESSIBLE = no\n\n'
+      'SKINCOLOR SKINCOLOR_NORMAL\nNAME = Emerald\nRAMP = 3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3\n',
+    );
+    expect(soc.map((d) => (d.name, d.accessible)), [
+      ('Super Neon 1', false),
+      ('Super Neon 2', false),
+      ('Emerald', true),
+    ]);
+
+    final lua = CharacterScanner.parseLuaColorDefs(
+      'skincolors[SKINCOLOR_SUPERICE1] = { name = "Super Ice 1", ramp = {1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1}, accessible = false }\n'
+      'skincolors[SKINCOLOR_SUPERICE3] = { name = "Super Ice 3", ramp = {3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3}, accessible = false }\n'
+      'skincolors[SKINCOLOR_SUPERICE2] = { name = "Super Ice 2", ramp = {2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2}, accessible = false }\n',
+    );
+    expect(lua.every((d) => !d.accessible), isTrue);
+
+    final grouped = CharacterScanner.groupColors(
+      [for (final d in [...soc, ...lua]) (d.name, d.ramp)],
+      hidden: {for (final d in [...soc, ...lua]) if (!d.accessible) d.name.toLowerCase()},
+    );
+    expect(grouped.map((g) => (g.name, g.ramps.length, g.selectable)), [
+      ('Super Neon', 2, false),
+      ('Emerald', 1, true),
+      ('Super Ice', 3, false),
+    ]);
+    // Кадры отсортированы по шагу: 1, 2, 3.
+    expect(grouped[2].ramps.map((r) => r.first), [1, 2, 3]);
+    expect(CharacterScanner.pulseIndices(5), [0, 1, 2, 3, 4, 3, 2, 1]);
+  });
 }
 
 /// Первый пиксель PNG (RGBA, фильтр None) — для проверки перекраски.

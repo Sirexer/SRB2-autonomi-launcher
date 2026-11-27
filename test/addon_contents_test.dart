@@ -187,4 +187,21 @@ void main() {
     expect(identical(results[0], results[1]), isTrue);
     expect(results[0].paths, unorderedEquals(files));
   });
+
+  test('AddonContents tracks accessible=false and Super colors as hidden for launch', () async {
+    final dir = Directory.systemTemp.createTempSync('srb2_hidden_col_');
+    addTearDown(() => dir.deleteSync(recursive: true));
+    final lua = p.join(dir.path, 'cols.lua');
+    await File(lua).writeAsString(
+      'skincolors[SKINCOLOR_MINT] = { name = "Mint", ramp = {1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1} }\n'
+      'skincolors[SKINCOLOR_HYPER1] = { name = "Hyper Glow 1", ramp = {2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2}, accessible = false }\n'
+      'skincolors[SKINCOLOR_SUPERTEST1] = { name = "Super Test 1", ramp = {3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3} }\n',
+    );
+    final c = AddonAnalyzer.analyze(lua);
+    expect(c.isColorHidden('Mint'), isFalse);
+    expect(c.isColorHidden('Hyper Glow 1'), isTrue);
+    expect(c.isColorHidden('Super Test 1'), isTrue);
+    final roundTrip = AddonContents.fromJson(jsonDecode(jsonEncode(c.toJson())) as Map<String, Object?>);
+    expect(roundTrip.isColorHidden('Hyper Glow 1'), isTrue);
+  });
 }

@@ -2540,7 +2540,7 @@ class _MainLauncherScreenState extends State<MainLauncherScreen> {
   final Map<String, AddonContents> _pathContents = {};
   final _contentsCache = JsonFileCache('addon_contents_cache.json');
   Future<void>? _contentsCacheLoaded;
-  static const _contentsCacheVersion = 3; // 2: у режимов есть TypeOfLevel; 3: карты «папкой» в PK3
+  static const _contentsCacheVersion = 4; // 2: у режимов есть TypeOfLevel; 3: карты «папкой» в PK3; 4: доступность цветов
 
   final _folderCache = JsonFileCache('folder_addons_cache.json');
   Map<String, Object?>? _folderCacheData;
@@ -3073,48 +3073,67 @@ class _MainLauncherScreenState extends State<MainLauncherScreen> {
     return FutureBuilder<AddonContents>(
       future: _contentsOf(path),
       builder: (context, snap) {
-        final colors = snap.data?.colors ?? const <SkinColor>[];
-        if (colors.isEmpty) return const SizedBox.shrink();
+        final data = snap.data;
+        final rawColors = data?.colors ?? const <SkinColor>[];
+        if (rawColors.isEmpty) return const SizedBox.shrink();
+        final grouped = CharacterScanner.groupColors(rawColors, isHidden: data!.isColorHidden);
+        final hasSelectable = grouped.any((g) => g.selectable);
         final current = _launch.options.cvar('color').trim().toLowerCase();
         final accent = Theme.of(context).colorScheme.primary;
-        return _contentSection('colors|$path', tr('Skin colors in {file} ({n})', {'file': p.basename(path), 'n': colors.length}), () => [
-              Text(
-                tr('Click a color to use it (+color). It works only in multiplayer or with +devmode.'),
-                style: const TextStyle(fontSize: 12, color: Colors.orangeAccent),
-              ),
-              const SizedBox(height: 8),
+        return _contentSection('colors|$path', tr('Skin colors in {file} ({n})', {'file': p.basename(path), 'n': grouped.length}), () => [
+              if (hasSelectable) ...[
+                Text(
+                  tr('Click a color to use it (+color). It works only in multiplayer or with +devmode.'),
+                  style: const TextStyle(fontSize: 12, color: Colors.orangeAccent),
+                ),
+                const SizedBox(height: 8),
+              ],
               Wrap(
                 spacing: 10,
                 runSpacing: 10,
                 children: [
-                  for (final c in colors)
+                  for (final g in grouped)
                     Tooltip(
-                      message: tr('Use this color: +color {name}', {'name': c.$1}),
+                      message: g.selectable
+                          ? tr('Use this color: +color {name}', {'name': g.name})
+                          : tr('Super color: cannot be selected for launch'),
                       child: InkWell(
                         borderRadius: BorderRadius.circular(8),
-                        onTap: () => _chooseColor(c.$1, path),
-                        child: Container(
-                        width: 96,
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: Colors.black26,
-                          borderRadius: BorderRadius.circular(8),
-                          // Выбранный цвет — рамка цвета темы.
-                          border: current == c.$1.toLowerCase()
-                              ? Border.all(color: accent, width: 2)
-                              : Border.all(color: Colors.grey[800]!),
+                        onTap: g.selectable ? () => _chooseColor(g.name, path) : null,
+                        child: Opacity(
+                          opacity: g.selectable ? 1.0 : 0.72,
+                          child: Container(
+                            width: 96,
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: Colors.black26,
+                              borderRadius: BorderRadius.circular(8),
+                              // Выбранный цвет — рамка цвета темы.
+                              border: g.selectable && current == g.name.toLowerCase()
+                                  ? Border.all(color: accent, width: 2)
+                                  : Border.all(color: Colors.grey[800]!),
+                            ),
+                            child: Column(
+                              children: [
+                                ColorPreview(
+                                  g.ramps.first,
+                                  ramps: g.ramps,
+                                  animate: _iconAnimation != AddonIconAnimation.none,
+                                  height: 72,
+                                ),
+                                const SizedBox(height: 6),
+                                Text(g.name,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 12,
+                                      color: g.selectable ? null : Colors.grey[400],
+                                    )),
+                              ],
+                            ),
+                          ),
                         ),
-                        child: Column(
-                          children: [
-                            ColorPreview(c.$2, height: 72),
-                            const SizedBox(height: 6),
-                            Text(c.$1,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
-                          ],
-                        ),
-                      ),
                       ),
                     ),
                 ],
@@ -3272,14 +3291,15 @@ class _MainLauncherScreenState extends State<MainLauncherScreen> {
   }
 
   /// Цвета для выбора +color на вкладке Launch: игры (кроме служебных и
-  /// супер-цветов) и аддонов включённой очереди.
+  /// супер-цветов) и аддонов включённой очереди (без супер/скрытых цветов).
   Future<List<SkinColorChoice>> _launchColors() async {
     final files = [for (final e in _activeQueue) _entryPath(e)].where((f) => File(f).existsSync()).toList();
     final contents = await Future.wait(files.map(_contentsOf));
     return [
       for (final (name, ramp) in _game.launchSkinColors) SkinColorChoice(name, ramp),
       for (final c in contents)
-        for (final (name, ramp) in c.colors) SkinColorChoice(name, ramp, custom: true),
+        for (final (name, ramp) in c.colors)
+          if (!c.isColorHidden(name)) SkinColorChoice(name, ramp, custom: true),
     ];
   }
 

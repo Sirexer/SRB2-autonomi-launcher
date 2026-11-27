@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:isolate';
 import 'dart:math' as math;
 
+import '../models/game.dart';
 import 'characters.dart';
 import 'map_preview.dart';
 
@@ -39,14 +40,25 @@ class AddonContents {
   /// Свои цвета персонажей (имя и ramp).
   final List<SkinColor> colors;
 
-  const AddonContents(
-      {this.characterNames = const [], this.gametypes = const [], this.mapNames = const [], this.colors = const []});
+  /// Имена цветов в нижнем регистре, недоступных для выбора (`accessible = false`).
+  final Set<String> hiddenColors;
+
+  const AddonContents({
+    this.characterNames = const [],
+    this.gametypes = const [],
+    this.mapNames = const [],
+    this.colors = const [],
+    this.hiddenColors = const {},
+  });
+
+  bool isColorHidden(String name) => hiddenColors.contains(name.toLowerCase()) || GameDef.isSuperColorName(name);
 
   Map<String, Object?> toJson() => {
         'c': characterNames,
         'g': [for (final g in gametypes) [g.name, g.identifier, g.description, g.levels]],
         'm': mapNames,
         'k': [for (final (name, ramp) in colors) [name, ramp]],
+        if (hiddenColors.isNotEmpty) 'hc': hiddenColors.toList(),
       };
 
   static AddonContents fromJson(Map<String, Object?> j) => AddonContents(
@@ -61,6 +73,7 @@ class AddonContents {
           for (final k in (j['k'] as List? ?? const []).cast<List>())
             (k[0] as String, [for (final x in k[1] as List) x as int]),
         ],
+        hiddenColors: {for (final h in j['hc'] as List? ?? const []) h as String},
       );
 
   int get characters => characterNames.length;
@@ -73,6 +86,7 @@ class AddonContents {
         gametypes: [for (final c in all) ...c.gametypes],
         mapNames: [for (final c in all) ...c.mapNames],
         colors: [for (final c in all) ...c.colors],
+        hiddenColors: {for (final c in all) ...c.hiddenColors},
       );
 
   /// Есть ли [query] (в нижнем регистре) среди карт, режимов, персонажей, цветов.
@@ -154,9 +168,11 @@ class AddonAnalyzer {
         final text = latin1.decode(File(path).readAsBytesSync(), allowInvalid: true);
         final lower = path.toLowerCase();
         final isLua = lower.endsWith('.lua');
+        final colorDefs = isLua ? CharacterScanner.parseLuaColorDefs(text) : CharacterScanner.parseSocColorDefs(text);
         return AddonContents(
           gametypes: isLua ? parseLuaGametypes(text) : parseSocGametypes(text),
-          colors: isLua ? CharacterScanner.parseLuaColors(text) : CharacterScanner.parseSocColors(text),
+          colors: [for (final d in colorDefs) (d.name, d.ramp)],
+          hiddenColors: {for (final d in colorDefs) if (!d.accessible) d.name.toLowerCase()},
         );
       } catch (_) {
         return const AddonContents();
@@ -174,13 +190,15 @@ class AddonAnalyzer {
         } catch (_) {}
       }
       final titles = MapScanner.levelTitles(a);
+      final colorDefs = CharacterScanner.customColorDefs(a);
       return AddonContents(
         characterNames: characters,
         gametypes: gametypesIn(a),
         mapNames: [
           for (final m in MapScanner.mapNames(a)) titles[m] == null ? m : '$m ${titles[m]}',
         ],
-        colors: CharacterScanner.customColors(a),
+        colors: [for (final d in colorDefs) (d.name, d.ramp)],
+        hiddenColors: {for (final d in colorDefs) if (!d.accessible) d.name.toLowerCase()},
       );
     } catch (_) {
       return const AddonContents();

@@ -613,7 +613,12 @@ class CharacterScanner {
   /// SOC — как их грузит игра (SOC/, SOC_*, MAINCFG, OBJCTCFG); Lua — Lua/,
   /// Init.lua в PK3, LUA_* в WAD.
   static List<SkinColor> customColors(AddonArchive a) => [
-        for (final (isSoc, text) in _scripts(a)) ...(isSoc ? parseSocColors(text) : parseLuaColors(text)),
+        for (final d in customColorDefs(a)) (d.name, d.ramp),
+      ];
+
+  /// То же, что [customColors], но с флагом доступности (`accessible`).
+  static List<({String name, List<int> ramp, bool accessible})> customColorDefs(AddonArchive a) => [
+        for (final (isSoc, text) in _scripts(a)) ...(isSoc ? parseSocColorDefs(text) : parseLuaColorDefs(text)),
       ];
 
   /// Тексты SOC (true) и Lua (false) архива — те, что грузит игра.
@@ -713,17 +718,81 @@ class CharacterScanner {
     return r.length >= 16 ? r.sublist(0, 16) : null;
   }
 
-  /// SOC: `SKINCOLOR SKINCOLOR_X` + `NAME = ...` + `RAMP = a,b,...`.
-  static List<SkinColor> parseSocColors(String text) {
-    final out = <SkinColor>[];
+  /// Объединённый цвет: обычный (1 кадр) или анимированный супер-цвет (несколько).
+  static List<({String name, List<List<int>> ramps, bool selectable})> groupColors(
+    List<SkinColor> colors, {
+    Set<String> hidden = const {},
+    bool Function(String name)? isHidden,
+  }) {
+    final stepRe = RegExp(r'^(.*?)(?:[\s_]+)?(\d+)$');
+    final groups = <({String key, String base, bool selectable, List<(int step, String name, List<int> ramp)> items})>[];
+    final byKey = <String, int>{};
+
+    for (final (name, ramp) in colors) {
+      final isHid = hidden.contains(name.toLowerCase()) || (isHidden?.call(name) ?? false);
+      final m = isHid ? stepRe.firstMatch(name.trim()) : null;
+      final base = m?.group(1)?.trim() ?? '';
+      final step = m == null ? null : int.tryParse(m.group(2)!);
+      if (isHid && m != null && step != null && base.isNotEmpty) {
+        final k = base.toLowerCase();
+        var idx = byKey[k];
+        if (idx == null) {
+          idx = groups.length;
+          byKey[k] = idx;
+          groups.add((key: k, base: base, selectable: false, items: []));
+        }
+        groups[idx].items.add((step, name, ramp));
+      } else {
+        groups.add((key: '', base: name, selectable: !isHid, items: [(0, name, ramp)]));
+      }
+    }
+
+    final out = <({String name, List<List<int>> ramps, bool selectable})>[];
+    for (final g in groups) {
+      if (g.key.isEmpty || g.items.length < 2) {
+        for (final item in g.items) {
+          out.add((name: item.$2, ramps: [item.$3], selectable: g.selectable));
+        }
+      } else {
+        final sorted = [...g.items]..sort((a, b) => a.$1.compareTo(b.$1));
+        out.add((name: g.base, ramps: [for (final item in sorted) item.$3], selectable: g.selectable));
+      }
+    }
+    return out;
+  }
+
+  /// Порядок кадров переливания «туда-обратно» (как в игре: 1→5→1).
+  static List<int> pulseIndices(int count) {
+    if (count <= 1) return const [0];
+    if (count == 2) return const [0, 1];
+    return [for (var i = 0; i < count; i++) i, for (var i = count - 2; i >= 1; i--) i];
+  }
+
+  /// Представительный кадр анимированного цвета при отключённой анимации.
+  static List<int> stillRamp(List<List<int>> ramps) =>
+      ramps[ramps.length <= 2 ? ramps.length - 1 : (ramps.length * 3 ~/ 4)];
+
+  static final _superIdRe = RegExp(r'^(?:SKINCOLOR_)?[TK]?SUPER.*\d$', caseSensitive: false);
+
+  /// SOC: `SKINCOLOR SKINCOLOR_X` + `NAME = ...` + `RAMP = a,b,...` + `ACCESSIBLE = ...`.
+  static List<SkinColor> parseSocColors(String text) => [for (final d in parseSocColorDefs(text)) (d.name, d.ramp)];
+
+  static List<({String name, List<int> ramp, bool accessible})> parseSocColorDefs(String text) {
+    final out = <({String name, List<int> ramp, bool accessible})>[];
     String? id;
     String? name;
     List<int>? ramp;
+    bool? accessible;
     void flush() {
-      if (id != null && ramp != null) out.add((name ?? id!, ramp!));
+      if (id != null && ramp != null) {
+        final resolvedName = name ?? id!;
+        final ok = accessible ?? !_superIdRe.hasMatch(id!);
+        out.add((name: resolvedName, ramp: ramp!, accessible: ok));
+      }
       id = null;
       name = null;
       ramp = null;
+      accessible = null;
     }
 
     for (final raw in const LineSplitter().convert(text)) {
@@ -744,14 +813,21 @@ class CharacterScanner {
       final value = line.substring(eq + 1).trim();
       if (key == 'NAME') name = value;
       if (key == 'RAMP') ramp = _ramp(value);
+      if (key == 'ACCESSIBLE') {
+        final v = value.toLowerCase();
+        if (v == 'false' || v == 'no' || v == '0') accessible = false;
+        if (v == 'true' || v == 'yes' || v == '1') accessible = true;
+      }
     }
     flush();
     return out;
   }
 
-  /// Lua: `skincolors[SKINCOLOR_X] = { name = "X", ramp = {...}, ... }`.
-  static List<SkinColor> parseLuaColors(String text) {
-    final out = <SkinColor>[];
+  /// Lua: `skincolors[SKINCOLOR_X] = { name = "X", ramp = {...}, accessible = ... }`.
+  static List<SkinColor> parseLuaColors(String text) => [for (final d in parseLuaColorDefs(text)) (d.name, d.ramp)];
+
+  static List<({String name, List<int> ramp, bool accessible})> parseLuaColorDefs(String text) {
+    final out = <({String name, List<int> ramp, bool accessible})>[];
     final start = RegExp(r'skincolors\s*\[\s*([A-Za-z0-9_]+)\s*\]\s*=\s*\{');
     for (final m in start.allMatches(text)) {
       // Тело таблицы до парной скобки.
@@ -767,7 +843,14 @@ class CharacterScanner {
       final name = RegExp(r'''name\s*=\s*["']([^"']*)["']''').firstMatch(body)?.group(1);
       final rampText = RegExp(r'ramp\s*=\s*\{([^}]*)\}').firstMatch(body)?.group(1);
       final ramp = rampText == null ? null : _ramp(rampText);
-      if (ramp != null) out.add((name ?? m.group(1)!, ramp));
+      if (ramp != null) {
+        final id = m.group(1)!;
+        final accMatch = RegExp(r'accessible\s*=\s*(true|false)', caseSensitive: false).firstMatch(body);
+        final accessible = accMatch != null
+            ? accMatch.group(1)!.toLowerCase() == 'true'
+            : !_superIdRe.hasMatch(id);
+        out.add((name: name ?? id, ramp: ramp, accessible: accessible));
+      }
     }
     return out;
   }

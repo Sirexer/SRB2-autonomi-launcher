@@ -1749,5 +1749,6 @@
   "Gamepad controls ({game}, Player {p})": "Управление с геймпада ({game}, Игрок {p})",
   "Tilt a stick, press a trigger, D-Pad or gamepad button...": "Отклоните стик, нажмите курок, крестовину или кнопку геймпада...",
   "Trigger deadzone": "Мёртвая зона курков",
-  "In the root folder": "В корневой папке"
+  "In the root folder": "В корневой папке",
+  "Super color: cannot be selected for launch": "Супер-цвет: нельзя выбрать для запуска"
 }

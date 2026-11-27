@@ -9,6 +9,7 @@ import 'package:path/path.dart' as p;
 
 import '../i18n.dart';
 import '../models/game.dart';
+import '../services/characters.dart';
 import '../services/model_mesh.dart';
 import '../services/model_packs.dart';
 import '../services/model_raster.dart';
@@ -16,7 +17,9 @@ import 'model_viewer.dart';
 
 /// В фоне: только явные аргументы (замыкание метода State может утащить
 /// с собой то, что в другой изолят не передаётся).
-Uint8List _blendJob((Uint8List, Uint8List, List<int>, Uint8List) a) => blendSkinColor(a.$1, a.$2, a.$3, a.$4);
+List<Uint8List> _blendBatchJob((Uint8List, Uint8List, List<List<int>>, Uint8List) a) => [
+      for (final ramp in a.$3) blendSkinColor(a.$1, a.$2, ramp, a.$4),
+    ];
 
 /// Модель, текстура и маска перекраски, прочитанные с диска.
 class LoadedModel {
@@ -151,19 +154,33 @@ class _ModelPreviewState extends State<_ModelPreview> with SingleTickerProviderS
         ? 0.0
         : ((elapsed - _lastTick).inMicroseconds / 1e6).clamp(0.0, 0.1);
     _lastTick = elapsed;
-    if (dt <= 0 || _frames.length < 2) return;
-    final prevStep = _step;
-    final nextPhase = (_phase + dt * _fps) % _frames.length;
-    if (!_interpolate && nextPhase.floor() % _frames.length == prevStep) {
-      _phase = nextPhase;
-      return;
+    if (dt <= 0) return;
+    var changed = false;
+    if (_playing && _frames.length >= 2) {
+      final prevStep = _step;
+      final nextPhase = (_phase + dt * _fps) % _frames.length;
+      if (!_interpolate && nextPhase.floor() % _frames.length == prevStep) {
+        _phase = nextPhase;
+      } else {
+        _phase = nextPhase;
+        changed = true;
+      }
     }
-    setState(() => _phase = nextPhase);
+    if (_coloredFrames.length > 1) {
+      final order = CharacterScanner.pulseIndices(_coloredFrames.length);
+      final nextColorStep = (elapsed.inMilliseconds ~/ 120) % order.length;
+      if (nextColorStep != _colorStep) {
+        _colorStep = nextColorStep;
+        _colored = _coloredFrames[order[nextColorStep]];
+        changed = true;
+      }
+    }
+    if (changed) setState(() {});
   }
 
-  /// Анимация идёт, пока [_playing] и в ней больше одного кадра.
+  /// Анимация идёт, пока есть движение модели или переливание супер-цвета.
   void _restartTimer() {
-    if (!_playing || _frames.length < 2) {
+    if ((!_playing || _frames.length < 2) && _coloredFrames.length < 2) {
       _ticker.stop();
       _lastTick = Duration.zero;
       return;
@@ -186,8 +203,16 @@ class _ModelPreviewState extends State<_ModelPreview> with SingleTickerProviderS
   }
   Uint8List? _palette;
 
-  /// Цвет игрока (номер в game.skinColors); null — без перекраски.
+  /// Цвета игры (супер-цвета объединены в переливающиеся группы).
+  late final List<({String name, List<List<int>> ramps, bool selectable})> _colors =
+      CharacterScanner.groupColors(widget.game.skinColors, isHidden: GameDef.isSuperColorName)
+          .where((g) => g.name != 'None')
+          .toList();
+
+  /// Цвет игрока (номер в [_colors]); null — без перекраски.
   int? _color;
+  List<RasterTexture> _coloredFrames = const [];
+  int _colorStep = 0;
 
   @override
   void initState() {
@@ -197,9 +222,8 @@ class _ModelPreviewState extends State<_ModelPreview> with SingleTickerProviderS
       setState(() => _palette = p);
       _recolor();
     });
-    final colors = widget.game.skinColors;
-    final blue = colors.indexWhere((c) => c.$1 == 'Blue');
-    _color = blue >= 0 ? blue : (colors.length > 1 ? 1 : null);
+    final blue = _colors.indexWhere((c) => c.name == 'Blue');
+    _color = blue >= 0 ? blue : (_colors.isNotEmpty ? 0 : null);
     _load();
   }
 
@@ -235,6 +259,8 @@ class _ModelPreviewState extends State<_ModelPreview> with SingleTickerProviderS
       setState(() {
         _model = model;
         _colored = null;
+        _coloredFrames = const [];
+        _colorStep = 0;
         _animations = anims;
         _animation = stand >= 0 ? stand : 0;
         _phase = 0;
@@ -257,13 +283,26 @@ class _ModelPreviewState extends State<_ModelPreview> with SingleTickerProviderS
     final model = _model, palette = _palette, color = _color;
     final texture = model?.texture;
     if (model == null || texture == null || model.blend == null || palette == null || color == null) {
-      if (_colored != null) setState(() => _colored = null);
+      if (_colored != null || _coloredFrames.isNotEmpty) {
+        setState(() {
+          _colored = null;
+          _coloredFrames = const [];
+          _colorStep = 0;
+        });
+        _restartTimer();
+      }
       return;
     }
-    final ramp = widget.game.skinColors[color].$2;
-    final pixels = await compute(_blendJob, (texture.rgba, model.blend!, ramp, palette));
+    final ramps = _colors[color].ramps;
+    final list = await compute(_blendBatchJob, (texture.rgba, model.blend!, ramps, palette));
     if (!mounted || model != _model || color != _color) return;
-    setState(() => _colored = RasterTexture(texture.width, texture.height, pixels));
+    final textures = [for (final pixels in list) RasterTexture(texture.width, texture.height, pixels)];
+    setState(() {
+      _coloredFrames = textures;
+      _colorStep = 0;
+      _colored = textures.first;
+    });
+    _restartTimer();
   }
 
   @override
@@ -429,9 +468,8 @@ class _ModelPreviewState extends State<_ModelPreview> with SingleTickerProviderS
                             isDense: true,
                             hint: Text(tr('Color')),
                             items: [
-                              for (var i = 0; i < widget.game.skinColors.length; i++)
-                                if (widget.game.skinColors[i].$1 != 'None')
-                                  DropdownMenuItem(value: i, child: Text(widget.game.skinColors[i].$1)),
+                              for (var i = 0; i < _colors.length; i++)
+                                DropdownMenuItem(value: i, child: Text(_colors[i].name)),
                             ],
                             onChanged: (v) {
                               setState(() => _color = v);

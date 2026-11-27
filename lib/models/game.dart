@@ -259,21 +259,31 @@ class GameDef {
   /// У своих игр файлы прогресса бывают другими — у них вкладки нет.
   bool get hasProgress => id == 'srb2' || id == 'srb2legacy' || id == 'srb2kart';
 
+  static final _superColorNameRe = RegExp(
+    r'^(?:super[\s_]|[tk]?super\d|[a-z]*super[a-z]*\d+$)',
+    caseSensitive: false,
+  );
+
+  /// Относится ли имя цвета к супер-цветам игры или аддонов.
+  static bool isSuperColorName(String name) {
+    final t = name.trim();
+    return t.startsWith('Super ') || t.toLowerCase().startsWith('super_') || _superColorNameRe.hasMatch(t);
+  }
+
   /// Цвета для выбора `+color` в Launch: имена — как их принимает игра,
   /// ramp — для образца, который рисуется в палитре SRB2 2.2. У SRB2 Legacy
   /// своя палитра (2.1), поэтому образец — тот же или похожий цвет 2.2.
   /// Супер-цвета не предлагаются.
   List<(String, List<int>)> get launchSkinColors {
-    bool superColor(String n) => n.startsWith('Super ') || RegExp(r'^[TK]?SUPER\d').hasMatch(n);
     if (engine != 'srb2legacy') {
-      return [for (final c in skinColors) if (c.$1 != 'None' && !superColor(c.$1)) c];
+      return [for (final c in skinColors) if (c.$1 != 'None' && !isSuperColorName(c.$1)) c];
     }
     String key(String n) => n.toUpperCase().replaceAll(RegExp(r'[\s_]'), '');
     const like = {'STEELBLUE': 'SLATE', 'PEACH': 'PEACHY', 'DARKRED': 'CRIMSON', 'NEONGREEN': 'LIME', 'ZIM': 'FOREST'};
     final modern = {for (final c in VanillaSkinColors.srb2) key(c.$1): c.$2};
     return [
       for (final (name, ramp) in VanillaSkinColors.srb2legacy)
-        if (name != 'None' && !superColor(name)) (name, modern[like[key(name)] ?? key(name)] ?? ramp),
+        if (name != 'None' && !isSuperColorName(name)) (name, modern[like[key(name)] ?? key(name)] ?? ramp),
     ];
   }
 
