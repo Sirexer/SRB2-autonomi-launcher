@@ -17,6 +17,7 @@ import '../services/servers_store.dart';
 import 'addon_icon.dart';
 import 'appearance_pickers.dart';
 import 'blacklist_settings.dart';
+import 'config_settings.dart';
 import 'file_actions.dart';
 import 'game_icon.dart';
 import '../services/hidden_addon_folders.dart';
@@ -40,7 +41,7 @@ enum TagOrder { alphabetical, groups }
 typedef TagDisplay = ({bool showGroup, TagOrder order, bool showAll});
 
 /// Разделы настроек.
-enum SettingsSection { general, games, game, addons, launch, servers, models, experimental }
+enum SettingsSection { general, games, game, addons, launch, servers, models, config, experimental }
 
 /// Окно настроек: разделы слева, содержимое справа. Изменения применяются сразу.
 class SettingsDialog extends StatefulWidget {
@@ -198,6 +199,9 @@ class _SettingsDialogState extends State<SettingsDialog> {
 
   String? _folderError;
   bool _folderSaved = false;
+  final _configKey = GlobalKey<ConfigSettingsState>();
+  bool _configDirty = false;
+  bool _leavePromptOpen = false;
 
   /// Общие разделы и разделы игры (под выбором игры).
   static const _common = [
@@ -211,6 +215,7 @@ class _SettingsDialogState extends State<SettingsDialog> {
     (SettingsSection.launch, Icons.play_circle_outline, 'Launch'),
     (SettingsSection.servers, Icons.dns_outlined, 'Servers'),
     (SettingsSection.models, Icons.view_in_ar_outlined, 'Models'),
+    (SettingsSection.config, Icons.settings_applications_outlined, 'Config'),
   ];
   static const _sections = [..._common, ..._perGame];
 
@@ -284,12 +289,51 @@ class _SettingsDialogState extends State<SettingsDialog> {
                   ),
                 ),
             ],
-            onChanged: (g) {
-              if (g != null && g != _g) _loadGame(g);
+            onChanged: (g) async {
+              if (g == null || g == _g) return;
+              if (!await _confirmLeaveConfigIfDirty()) return;
+              if (!mounted) return;
+              _loadGame(g);
             },
           ),
         ),
       );
+
+  /// Проверяет несохранённые изменения в редакторе конфига; возвращает `true`,
+  /// если можно покидать раздел/диалог (или после сохранения/сброса).
+  Future<bool> _confirmLeaveConfigIfDirty() async {
+    if (_section != SettingsSection.config || !_configDirty || _leavePromptOpen) return true;
+    _leavePromptOpen = true;
+    try {
+      final choice = await showDialog<String>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: Text(tr('Unsaved changes in config')),
+          content: Text(tr('Save or discard your changes to {game} config before leaving?', {'game': _g.name})),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, 'stay'), child: Text(tr('Cancel'))),
+            TextButton(onPressed: () => Navigator.pop(ctx, 'discard'), child: Text(tr('Discard'))),
+            FilledButton(onPressed: () => Navigator.pop(ctx, 'save'), child: Text(tr('Save'))),
+          ],
+        ),
+      );
+      if (choice == 'discard') {
+        _configKey.currentState?.reset();
+        return true;
+      }
+      if (choice == 'save') {
+        return await _configKey.currentState?.save() ?? false;
+      }
+      return false;
+    } finally {
+      _leavePromptOpen = false;
+    }
+  }
+
+  Future<void> _closeDialog() async {
+    if (!await _confirmLeaveConfigIfDirty()) return;
+    if (mounted) Navigator.pop(context);
+  }
 
   Widget _sectionTile(SettingsSection section, IconData icon, String label, Color accent) => Padding(
         padding: const EdgeInsets.only(bottom: 2),
@@ -300,7 +344,11 @@ class _SettingsDialogState extends State<SettingsDialog> {
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
           leading: Icon(icon, size: 20),
           title: Text(tr(label), style: const TextStyle(fontSize: 14)),
-          onTap: () => setState(() => _section = section),
+          onTap: () async {
+            if (section == _section) return;
+            if (!await _confirmLeaveConfigIfDirty()) return;
+            if (mounted) setState(() => _section = section);
+          },
         ),
       );
 
@@ -314,15 +362,22 @@ class _SettingsDialogState extends State<SettingsDialog> {
   @override
   Widget build(BuildContext context) {
     final accent = Theme.of(context).colorScheme.primary;
-    return Dialog(
-      insetPadding: const EdgeInsets.all(32),
-      clipBehavior: Clip.antiAlias,
-      child: SizedBox(
-        width: 1100,
-        height: 760,
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
+    final guardPop = _section == SettingsSection.config && _configDirty;
+    return PopScope(
+      canPop: !guardPop,
+      onPopInvokedWithResult: (didPop, _) async {
+        if (didPop) return;
+        await _closeDialog();
+      },
+      child: Dialog(
+        insetPadding: const EdgeInsets.all(32),
+        clipBehavior: Clip.antiAlias,
+        child: SizedBox(
+          width: 1100,
+          height: 760,
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
             // Навигация по разделам.
             Container(
               width: 240,
@@ -370,7 +425,7 @@ class _SettingsDialogState extends State<SettingsDialog> {
                         IconButton(
                           icon: const Icon(Icons.close),
                           tooltip: tr('Close'),
-                          onPressed: () => Navigator.pop(context),
+                          onPressed: _closeDialog,
                         ),
                       ],
                     ),
@@ -383,6 +438,7 @@ class _SettingsDialogState extends State<SettingsDialog> {
           ],
         ),
       ),
+    ),
     );
   }
 
@@ -402,6 +458,17 @@ class _SettingsDialogState extends State<SettingsDialog> {
         return _page([_servers()]);
       case SettingsSection.models:
         return _page([ModelsSettings(game: _g, gameFolder: _gameFolder, launch: _launchSettings)]);
+      case SettingsSection.config:
+        return ConfigSettings(
+          key: _configKey,
+          game: _g,
+          gameFolder: _gameFolder,
+          launch: _launchSettings,
+          onConfigureFolder: () => setState(() => _section = SettingsSection.game),
+          onDirtyChanged: (v) {
+            if (_configDirty != v && mounted) setState(() => _configDirty = v);
+          },
+        );
       case SettingsSection.experimental:
         return _page([_experimental()]);
     }

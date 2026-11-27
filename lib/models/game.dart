@@ -115,6 +115,12 @@ class GameDef {
   final ModelFormat? modelsOverride;
   final bool hasModelsOverride;
 
+  /// Имя `.cfg`-файла конфига своей игры (`"config_file"` в JSON); null — как у [engine].
+  final String? configFileOverride;
+
+  /// Переопределения и дополнения редактора конфига из JSON (`"config"`).
+  final Map<String, dynamic>? configDefinition;
+
   const GameDef({
     required this.id,
     required this.name,
@@ -149,7 +155,18 @@ class GameDef {
     this.definition,
     this.modelsOverride,
     this.hasModelsOverride = false,
+    this.configFileOverride,
+    this.configDefinition,
   });
+
+  /// Имя файла конфига игры (`config.cfg`, `kartconfig.cfg`, `ringconfig.cfg`, `blanconfig.cfg`).
+  String get configFileName =>
+      configFileOverride ??
+      switch (engine) {
+        'srb2kart' => 'kartconfig.cfg',
+        'drrr' => 'ringconfig.cfg',
+        _ => 'config.cfg',
+      };
 
   /// Как игра читает 3D-модели; null — модели не поддерживаются.
   ModelFormat? get models => hasModelsOverride ? modelsOverride : ModelFormat.forEngine(engine);
@@ -575,6 +592,11 @@ class Games {
     } on FormatException catch (e) {
       throw FormatException('$id: ${e.message}');
     }
+    final cfgFile = str('config_file');
+    final rawConfig = j['config'];
+    if (rawConfig != null && rawConfig is! Map) {
+      throw FormatException('$id: "config" must be an object');
+    }
     int intOf(String k, int fallback) => j[k] is num ? (j[k] as num).toInt() : int.tryParse('${j[k] ?? ''}') ?? fallback;
     return GameDef(
       id: id,
@@ -612,6 +634,8 @@ class Games {
       definition: Map<String, dynamic>.from(j),
       modelsOverride: models,
       hasModelsOverride: j.containsKey('models'),
+      configFileOverride: cfgFile.isEmpty ? null : cfgFile,
+      configDefinition: rawConfig is Map ? Map<String, dynamic>.from(rawConfig) : null,
     );
   }
 
