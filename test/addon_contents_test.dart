@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
@@ -7,6 +8,7 @@ import 'package:srb2_autonomi_launcher/models/game.dart';
 import 'package:srb2_autonomi_launcher/services/addon_contents.dart';
 import 'package:srb2_autonomi_launcher/services/app_activity.dart';
 import 'package:srb2_autonomi_launcher/services/map_preview.dart';
+import 'package:srb2_autonomi_launcher/services/server_files.dart';
 import 'package:srb2_autonomi_launcher/ui/gametype_choice.dart';
 
 import 'map_preview_test.dart' show buildWad, buildZip;
@@ -143,5 +145,46 @@ void main() {
     final (none, noneCustom) = gametypesForMap(Games.srb2, const MapPreview('MAP02', '', null), custom);
     expect(none, isEmpty);
     expect(noneCustom, isEmpty);
+  });
+
+  test('analyzeAllInBackground streams batches with unsendable callback and LocalFileIndex.shared deduplicates', () async {
+    final dir = Directory.systemTemp.createTempSync('srb2_addon_bg_');
+    addTearDown(() => dir.deleteSync(recursive: true));
+
+    final files = <String>[];
+    for (var i = 0; i < 6; i++) {
+      final path = p.join(dir.path, 'sub$i', 'char_$i.wad');
+      Directory(p.dirname(path)).createSync(recursive: true);
+      await File(path).writeAsBytes(buildWad([('S_SKIN', ascii.encode('name = c$i\n')), ('S_END', [])]));
+      files.add(path);
+    }
+
+    // ReceivePort непередаваем через SendPort — замыкание onBatch не должно утечь в изолят.
+    final port = ReceivePort();
+    final streamed = <String, AddonContents>{};
+    var calls = 0;
+    try {
+      final all = await AddonAnalyzer.analyzeAllInBackground(
+        files,
+        onBatch: (b) {
+          port.sendPort;
+          calls++;
+          streamed.addAll(b);
+        },
+      );
+      expect(all.keys, unorderedEquals(files));
+      expect(streamed.keys, unorderedEquals(files));
+      expect(calls, greaterThan(0));
+      expect(all[files.first]!.category, AddonCategory.characters);
+    } finally {
+      port.close();
+    }
+
+    final results = await Future.wait([
+      LocalFileIndex.shared(dir.path, force: true),
+      LocalFileIndex.shared(dir.path),
+    ]);
+    expect(identical(results[0], results[1]), isTrue);
+    expect(results[0].paths, unorderedEquals(files));
   });
 }

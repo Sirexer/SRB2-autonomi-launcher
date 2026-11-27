@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:math' as math;
 import 'dart:ui' show AppExitResponse;
 import 'package:flutter/material.dart';
@@ -2541,6 +2542,11 @@ class _MainLauncherScreenState extends State<MainLauncherScreen> {
   Future<void>? _contentsCacheLoaded;
   static const _contentsCacheVersion = 3; // 2: у режимов есть TypeOfLevel; 3: карты «папкой» в PK3
 
+  final _folderCache = JsonFileCache('folder_addons_cache.json');
+  Map<String, Object?>? _folderCacheData;
+  Future<void>? _folderCacheLoaded;
+  int _serverAddonsToken = 0;
+
   Future<void> _loadContentsCache() => _contentsCacheLoaded ??= () async {
         final j = await _contentsCache.read();
         if (j == null || j['v'] != _contentsCacheVersion) return;
@@ -2557,25 +2563,90 @@ class _MainLauncherScreenState extends State<MainLauncherScreen> {
         'files': {for (final e in _pathContents.entries) e.key: e.value.toJson()},
       });
 
-  /// Разбирает [paths], которых ещё нет в кэше; возвращает путь → содержимое.
-  Future<Map<String, AddonContents>> _analyzePaths(List<String> paths) async {
-    await _loadContentsCache();
-    final keyOf = {for (final f in paths) f: '$f|${_mapPreviewKey(f)}'};
-    final unknown = [for (final f in paths) if (!_pathContents.containsKey(keyOf[f])) f];
-    // Понемногу: между пачками — пауза, если окно свёрнуто.
-    for (var i = 0; i < unknown.length; i += 16) {
-      await AppActivity.whenVisible();
-      final chunk = unknown.sublist(i, math.min(i + 16, unknown.length));
+  Future<void> _loadFolderCache() => _folderCacheLoaded ??= () async {
+        final j = await _folderCache.read();
+        if (j != null && j['v'] == 1 && j['entries'] is Map) {
+          _folderCacheData = (j['entries'] as Map).cast<String, Object?>();
+        } else {
+          _folderCacheData = {};
+        }
+      }();
+
+  void _saveFolderCache(String key, List<String> downloads, List<String> folder) {
+    final data = _folderCacheData ??= {};
+    data[key] = {'d': downloads, 'f': folder};
+    _folderCache.write({'v': 1, 'entries': data});
+  }
+
+  static Future<Map<String, (int, int)>> _statFilesInBackground(List<String> paths) =>
+      paths.isEmpty ? Future.value(const {}) : Isolate.run(() => _statFilesSync(paths));
+
+  static Map<String, (int, int)> _statFilesSync(List<String> paths) {
+    final out = <String, (int, int)>{};
+    for (final path in paths) {
       try {
-        final found = await AddonAnalyzer.analyzeAllInBackground(chunk);
-        found.forEach((f, c) {
-          // Старые версии того же файла из кэша убираем.
-          _pathContents.removeWhere((k, _) => k.startsWith('$f|'));
-          _pathContents[keyOf[f]!] = c;
-        });
+        final st = File(path).statSync();
+        if (st.type == FileSystemEntityType.file) {
+          out[path] = (st.size, st.modified.millisecondsSinceEpoch);
+        }
       } catch (_) {}
     }
-    if (unknown.isNotEmpty) _saveContentsCache();
+    return out;
+  }
+
+  static Future<List<String>> _listAddonFilesInBackground(String dir) =>
+      Isolate.run(() {
+        final files = <String>[];
+        try {
+          for (final e in Directory(dir).listSync(recursive: true, followLinks: false)) {
+            if (e is File && PlatformUtils.isAddonFile(e.path)) files.add(e.path);
+          }
+        } catch (_) {}
+        return files;
+      });
+
+  /// Разбирает [paths], которых ещё нет в кэше; возвращает путь → содержимое.
+  /// Новые файлы разбираются в пуле изолятов и отдаются пачками через [onBatch].
+  Future<Map<String, AddonContents>> _analyzePaths(
+    List<String> paths, {
+    void Function(Map<String, AddonContents> batch)? onBatch,
+  }) async {
+    await _loadContentsCache();
+    if (paths.isEmpty) return const {};
+    final stats = await _statFilesInBackground(paths);
+    final keyOf = {
+      for (final f in paths)
+        f: stats[f] == null ? '$f|' : '$f|${stats[f]!.$1}|${stats[f]!.$2}',
+    };
+    final unknown = [for (final f in paths) if (!_pathContents.containsKey(keyOf[f])) f];
+    if (unknown.isNotEmpty) {
+      await AppActivity.whenVisible();
+      final pendingUi = <String, AddonContents>{};
+      final uiWatch = Stopwatch()..start();
+      try {
+        await AddonAnalyzer.analyzeAllInBackground(
+          unknown,
+          onBatch: (batch) {
+            batch.forEach((f, c) {
+              // Старые версии того же файла из кэша убираем.
+              _pathContents.removeWhere((k, _) => k.startsWith('$f|'));
+              _pathContents[keyOf[f]!] = c;
+              if (onBatch != null) pendingUi[f] = c;
+            });
+            if (onBatch != null && pendingUi.isNotEmpty && uiWatch.elapsedMilliseconds >= 400) {
+              uiWatch.reset();
+              final emit = Map<String, AddonContents>.from(pendingUi);
+              pendingUi.clear();
+              onBatch(emit);
+            }
+          },
+        );
+      } catch (_) {}
+      if (onBatch != null && pendingUi.isNotEmpty) {
+        onBatch(Map<String, AddonContents>.from(pendingUi));
+      }
+      _saveContentsCache();
+    }
     return {for (final f in paths) if (_pathContents[keyOf[f]] case final c?) f: c};
   }
 
@@ -2584,29 +2655,91 @@ class _MainLauncherScreenState extends State<MainLauncherScreen> {
   /// остальной папке игры (если этот раздел показывается). [rescan] — папку
   /// игры обойти заново, даже если её обходили меньше минуты назад.
   Future<void> _refreshServerAddons({bool rescan = false}) async {
+    final token = ++_serverAddonsToken;
     final game = _game;
     final root = srb2FolderPath;
     final downloads = _downloadDir;
+    final cacheKey = '${game.id}|${root ?? ''}|${downloads ?? ''}';
+
+    await (_folderCacheLoaded ?? _loadFolderCache(), _loadContentsCache()).wait;
     // Скрытые папки (Settings → Game folder): их аддоны не из репозиториев не показываются.
     final hidden = await HiddenAddonFolders.resolved(game, root);
-    final found = [
-      for (final f in downloads == null ? <String>[] : await _otherDownloads(downloads, fresh: true))
-        if (!HiddenAddonFolders.hides(hidden, f)) f,
-    ];
-    final inFolder = [
-      for (final f in root == null || !_showFolderAddons
-          ? <String>[]
-          : await _folderAddons(game, root, fresh: true, rescan: rescan))
-        if (!HiddenAddonFolders.hides(hidden, f)) f,
-    ];
-    final info = await _analyzePaths([...found, ...inFolder]);
-    if (!mounted || game != _game) return;
+    if (!mounted || game != _game || token != _serverAddonsToken) return;
+
+    // Показываем сохранённый список с прошлого запуска сразу (без ожидания обхода),
+    // отфильтровав удалённые файлы.
+    if (!rescan && _serverAddonFiles.isEmpty && _folderAddonFiles.isEmpty) {
+      final cached = _folderCacheData?[cacheKey];
+      if (cached is Map) {
+        final rawD = [for (final f in cached['d'] as List? ?? const []) f as String];
+        final rawF = [for (final f in cached['f'] as List? ?? const []) f as String];
+        final existing = await _statFilesInBackground([...rawD, ...rawF]);
+        if (!mounted || game != _game || token != _serverAddonsToken) return;
+        final cachedFound = [for (final f in rawD) if (existing.containsKey(f) && !HiddenAddonFolders.hides(hidden, f)) f];
+        final cachedFolder = [
+          if (root != null && _showFolderAddons)
+            for (final f in rawF) if (existing.containsKey(f) && !HiddenAddonFolders.hides(hidden, f)) f,
+        ];
+        if (cachedFound.isNotEmpty || cachedFolder.isNotEmpty) {
+          final cachedInfo = <String, AddonContents>{};
+          for (final f in [...cachedFound, ...cachedFolder]) {
+            if (existing[f] case final st?) {
+              if (_pathContents['$f|${st.$1}|${st.$2}'] case final c?) cachedInfo[f] = c;
+            }
+          }
+          setState(() {
+            _serverAddonFiles = cachedFound;
+            _folderAddonFiles = cachedFolder;
+            _serverAddonInfo = cachedInfo;
+          });
+        }
+      }
+    }
+
+    // Обход DOWNLOAD и папки игры идут параллельно.
+    final (rawDownloads, rawFolder) = await (
+      downloads == null ? Future.value(<String>[]) : _otherDownloads(downloads, fresh: true),
+      root == null || !_showFolderAddons
+          ? Future.value(<String>[])
+          : _folderAddons(game, root, fresh: true, rescan: rescan),
+    ).wait;
+    if (!mounted || game != _game || token != _serverAddonsToken) return;
+
+    _saveFolderCache(cacheKey, rawDownloads, rawFolder);
+    final found = [for (final f in rawDownloads) if (!HiddenAddonFolders.hides(hidden, f)) f];
+    final inFolder = [for (final f in rawFolder) if (!HiddenAddonFolders.hides(hidden, f)) f];
+    final allPaths = [...found, ...inFolder];
+
+    // Файлы в папке показываем сразу (уже известное содержимое берётся из кэша),
+    // а новые архивы дочитываются в фоне пачками каждые 400 мс.
+    final initialStats = await _statFilesInBackground(allPaths);
+    if (!mounted || game != _game || token != _serverAddonsToken) return;
+    final partialInfo = <String, AddonContents>{};
+    for (final f in allPaths) {
+      if (initialStats[f] case final st?) {
+        if (_pathContents['$f|${st.$1}|${st.$2}'] case final c?) partialInfo[f] = c;
+      }
+    }
     setState(() {
       _serverAddonFiles = found;
       _folderAddonFiles = inFolder;
-      _serverAddonInfo = info;
+      _serverAddonInfo = partialInfo;
       final selected = _selectedLocalFile;
       if (selected != null && !found.contains(selected) && !inFolder.contains(selected)) _selectedLocalFile = null;
+    });
+
+    final info = await _analyzePaths(
+      allPaths,
+      onBatch: (batch) {
+        if (!mounted || game != _game || token != _serverAddonsToken) return;
+        setState(() {
+          _serverAddonInfo = {..._serverAddonInfo, ...batch};
+        });
+      },
+    );
+    if (!mounted || game != _game || token != _serverAddonsToken) return;
+    setState(() {
+      _serverAddonInfo = info;
     });
     _schedulePlayerRescan();
   }
@@ -2627,12 +2760,7 @@ class _MainLauncherScreenState extends State<MainLauncherScreen> {
 
   Future<List<String>> _findOtherDownloads(String downloads) async {
     if (!await Directory(downloads).exists()) return [];
-    final files = <String>[];
-    try {
-      await for (final e in Directory(downloads).list(recursive: true, followLinks: false)) {
-        if (e is File && PlatformUtils.isAddonFile(e.path)) files.add(e.path);
-      }
-    } catch (_) {}
+    final files = await _listAddonFilesInBackground(downloads);
     return _notFromRepositories(files);
   }
 
@@ -2672,8 +2800,10 @@ class _MainLauncherScreenState extends State<MainLauncherScreen> {
   }
 
   /// Из [files] — те, что не файлы репозиториев, по алфавиту. MD5 считаем
-  /// только у совпавших с файлом репозитория по имени или размеру.
+  /// только у совпавших с файлом репозитория по имени или размеру (размеры
+  /// проверяются пачкой в изоляте, а недостающие MD5 — в пуле до 2 воркеров).
   Future<List<String>> _notFromRepositories(List<String> files) async {
+    if (files.isEmpty) return [];
     final repoMd5 = <String>{};
     final repoNames = <String>{};
     final repoSizes = <int>{};
@@ -2686,20 +2816,45 @@ class _MainLauncherScreenState extends State<MainLauncherScreen> {
         }
       }
     }
-    final found = <String>[];
+    final stats = await _statFilesInBackground(files);
+    final needMd5 = <(String, int, int)>[];
+    final excluded = <String>{};
     for (final path in files) {
-      try {
-        final sameName = repoNames.contains(p.basename(path).toLowerCase());
-        final sameSize = repoSizes.contains(await File(path).length());
-        if (sameName || sameSize) {
-          await AppActivity.whenVisible(); // MD5 большого файла — когда окно открыто
-          if (repoMd5.contains(await _md5For(path))) continue;
+      final st = stats[path];
+      if (st == null) continue; // файл пропал или нет доступа
+      final sameName = repoNames.contains(p.basename(path).toLowerCase());
+      final sameSize = repoSizes.contains(st.$1);
+      if (sameName || sameSize) {
+        final cached = _md5Cache[path];
+        if (cached != null && cached.size == st.$1 && cached.mtime == st.$2) {
+          if (repoMd5.contains(cached.md5.toLowerCase())) excluded.add(path);
+        } else {
+          needMd5.add((path, st.$1, st.$2));
         }
-        found.add(path);
-      } catch (_) {
-        // файл пропал или нет доступа — пропускаем
       }
     }
+    if (needMd5.isNotEmpty) {
+      var next = 0;
+      Future<void> worker() async {
+        while (next < needMd5.length) {
+          final (path, size, mtime) = needMd5[next++];
+          await AppActivity.whenVisible();
+          final md5 = (await AutonomiService.calculateFileMd5(path))?.toLowerCase();
+          if (md5 != null) {
+            _md5Cache[path] = _Md5Entry(size, mtime, md5);
+            _md5CacheDirty = true;
+            if (repoMd5.contains(md5)) excluded.add(path);
+          }
+        }
+      }
+
+      final pool = math.min(needMd5.length, 2);
+      await Future.wait([for (var i = 0; i < pool; i++) worker()]);
+    }
+    final found = [
+      for (final path in files)
+        if (stats.containsKey(path) && !excluded.contains(path)) path,
+    ];
     if (_md5CacheDirty) {
       _md5CacheDirty = false;
       await _saveMd5Cache();

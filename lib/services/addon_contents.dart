@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'dart:isolate';
+import 'dart:math' as math;
 
 import 'characters.dart';
 import 'map_preview.dart';
@@ -95,14 +96,46 @@ class AddonContents {
 class AddonAnalyzer {
   AddonAnalyzer._();
 
-  /// Разбор в фоне. Каждый файл — отдельно (ошибка одного не обнуляет
-  /// остальные); если фоновый изолят не запустился — разбираем здесь же.
-  static Future<Map<String, AddonContents>> analyzeAllInBackground(List<String> paths) async {
-    try {
-      return await Isolate.run(() => {for (final p in paths) p: analyzeSafe(p)});
-    } catch (_) {
-      return {for (final p in paths) p: analyzeSafe(p)};
+  static Future<Map<String, AddonContents>> _analyzeChunk(List<String> paths) =>
+      Isolate.run(() => {for (final p in paths) p: analyzeSafe(p)});
+
+  /// Разбор в фоне (несколько изолятов с паузами, чтобы интерфейс оставался
+  /// плавным). Каждый файл — отдельно; [onBatch] получает пачки по мере
+  /// готовности.
+  static Future<Map<String, AddonContents>> analyzeAllInBackground(
+    List<String> paths, {
+    void Function(Map<String, AddonContents> batch)? onBatch,
+  }) async {
+    final out = <String, AddonContents>{};
+    if (paths.isEmpty) return out;
+    final workers = math.min(paths.length, math.max(1, math.min(Platform.numberOfProcessors ~/ 2, 3)));
+    final chunkSize = paths.length <= 24 ? math.max(1, (paths.length / (workers * 2)).ceil()) : 10;
+    final chunks = <List<String>>[
+      for (var i = 0; i < paths.length; i += chunkSize) paths.sublist(i, math.min(i + chunkSize, paths.length)),
+    ];
+    final pool = math.min(workers, chunks.length);
+    var nextChunk = 0;
+    Future<void> worker() async {
+      while (nextChunk < chunks.length) {
+        final chunk = chunks[nextChunk++];
+        Map<String, AddonContents> found;
+        try {
+          found = await _analyzeChunk(chunk);
+        } catch (_) {
+          found = {for (final p in chunk) p: analyzeSafe(p)};
+        }
+        if (found.isNotEmpty) {
+          out.addAll(found);
+          onBatch?.call(found);
+        }
+        if (nextChunk < chunks.length) {
+          await Future<void>.delayed(const Duration(milliseconds: 8));
+        }
+      }
     }
+
+    await Future.wait([for (var i = 0; i < pool; i++) worker()]);
+    return out;
   }
 
   static AddonContents analyzeSafe(String path) {

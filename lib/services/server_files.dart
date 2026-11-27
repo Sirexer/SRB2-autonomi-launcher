@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:path/path.dart' as p;
 
@@ -24,28 +25,43 @@ class LocalFileIndex {
   static const skippedFolders = {'screenshots', 'replay', 'movies', 'models', 'luafiles', 'logs'};
 
   static LocalFileIndex? _shared;
+  static final Map<String, Future<LocalFileIndex>> _sharedBuilding = {};
 
   /// Общий индекс папки игры (перестраивается раз в минуту или по [force]).
+  /// Одновременные вызовы (репозитории, папка игры, плеер) делят один обход.
   static Future<LocalFileIndex> shared(String root, {bool force = false}) async {
     final s = _shared;
     if (!force && s != null && s.root == root && DateTime.now().difference(s.built) < const Duration(minutes: 1)) {
       return s;
     }
-    return _shared = await build(root);
+    final existing = !force ? _sharedBuilding[root] : null;
+    if (existing != null) return await existing;
+    final future = build(root);
+    _sharedBuilding[root] = future;
+    try {
+      final index = await future;
+      _shared = index;
+      return index;
+    } finally {
+      if (identical(_sharedBuilding[root], future)) _sharedBuilding.remove(root);
+    }
   }
 
-  /// SRB2 ищет на глубину до 10 папок; столько же обходим и мы.
-  static Future<LocalFileIndex> build(String root, {int maxDepth = 10}) async {
+  /// SRB2 ищет на глубину до 10 папок; столько же обходим и мы (в фоновом изоляте).
+  static Future<LocalFileIndex> build(String root, {int maxDepth = 10}) async =>
+      LocalFileIndex._(root, await Isolate.run(() => _buildSync(root, maxDepth)));
+
+  static Map<String, List<String>> _buildSync(String root, int maxDepth) {
     final byName = <String, List<String>>{};
 
-    Future<void> walk(Directory dir, int depth) async {
+    void walk(Directory dir, int depth) {
       try {
-        await for (final e in dir.list(followLinks: false)) {
+        for (final e in dir.listSync(followLinks: false)) {
           if (e is File) {
-            byName.putIfAbsent(p.basename(e.path).toLowerCase(), () => []).add(e.path);
+            (byName[p.basename(e.path).toLowerCase()] ??= []).add(e.path);
           } else if (e is Directory && depth > 0) {
             if (skippedFolders.contains(p.basename(e.path).toLowerCase())) continue;
-            await walk(e, depth - 1);
+            walk(e, depth - 1);
           }
         }
       } catch (_) {
@@ -53,8 +69,8 @@ class LocalFileIndex {
       }
     }
 
-    await walk(Directory(root), maxDepth);
-    return LocalFileIndex._(root, byName);
+    walk(Directory(root), maxDepth);
+    return byName;
   }
 
   /// Путь к файлу с таким именем и контрольной суммой или null.
