@@ -144,6 +144,7 @@ class MusicPlayer extends ChangeNotifier {
   Timer? _timer;
   int _token = 0;
   int _scanToken = 0;
+  bool _engineTouched = false;
 
   /// Аудио-движок засыпает (освобождает звуковое устройство и свой поток),
   /// если столько времени ничего не играет; «Играть» будит его.
@@ -152,6 +153,22 @@ class MusicPlayer extends ChangeNotifier {
 
   MusicPlayer() {
     AppActivity.visible.addListener(_onVisibility);
+    _preloadWindowsSoLoud();
+  }
+
+  /// Предзагружает `flutter_soloud_plugin.dll` и его кодеки (ogg/opus/vorbis/FLAC)
+  /// по абсолютному пути рядом с exe через `LOAD_WITH_ALTERED_SEARCH_PATH`,
+  /// чтобы смена текущей папки (диалоги выбора файлов, ярлыки) не ломала SoLoud ошибкой 126.
+  static void _preloadWindowsSoLoud() {
+    if (!Platform.isWindows) return;
+    final exeDir = p.dirname(Platform.resolvedExecutable);
+    for (final dir in [exeDir, Directory.current.path]) {
+      final path = p.join(dir, 'flutter_soloud_plugin.dll');
+      if (File(path).existsSync()) {
+        NativeMusic.open(path);
+        return;
+      }
+    }
   }
 
 
@@ -568,13 +585,16 @@ class MusicPlayer extends ChangeNotifier {
   // --- Воспроизведение ---
 
   Future<bool> _ensureEngine() async {
-    final soloud = SoLoud.instance;
-    if (soloud.isInitialized) return true;
+    _preloadWindowsSoLoud();
     try {
+      final soloud = SoLoud.instance;
+      _engineTouched = true;
+      if (soloud.isInitialized) return true;
       AppLog.write('audio engine starts');
       await soloud.init();
       return true;
     } catch (e) {
+      AppLog.console('[audio] init failed: $e');
       error = 'Audio engine failed to start: $e';
       notifyListeners();
       return false;
@@ -902,8 +922,9 @@ class MusicPlayer extends ChangeNotifier {
     if (_active) await _stopCurrent();
     MediaKeys.disable(); // звук уснул — медиаклавиши снова другим программам
     AppLog.write('audio engine sleeps');
-    final soloud = SoLoud.instance;
+    if (!_engineTouched) return;
     try {
+      final soloud = SoLoud.instance;
       _releaseSpectrum();
       if (soloud.isInitialized) soloud.deinit();
     } catch (_) {}
@@ -924,14 +945,15 @@ class MusicPlayer extends ChangeNotifier {
 
   Future<void> _stopCurrent() async {
     _timer?.cancel();
-    final soloud = SoLoud.instance;
     final h = _handle, s = _source, m = _midi;
     _timer = null;
     _handle = null;
     _source = null;
     _midi = null;
     if (m != null) await m.stop();
+    if (h == null && s == null) return;
     try {
+      final soloud = SoLoud.instance;
       if (h != null) await soloud.stop(h);
       if (s != null) await soloud.disposeSource(s);
     } catch (_) {}
@@ -967,6 +989,7 @@ class MusicPlayer extends ChangeNotifier {
     MediaKeys.disable();
     try {
       await _stopCurrent();
+      if (!_engineTouched) return;
       final soloud = SoLoud.instance;
       _releaseSpectrum();
       if (soloud.isInitialized) soloud.deinit();
@@ -1109,9 +1132,10 @@ class MusicPlayer extends ChangeNotifier {
   /// ничего не играет. Пока его спрашивают, движок считает FFT (немного
   /// процессора) — визуализация зовёт [stopSpectrum], когда не нужна.
   Float32List? spectrum() {
-    final soloud = SoLoud.instance;
-    if (!playing || !soloud.isInitialized) return null;
+    if (!playing || !_engineTouched) return null;
     try {
+      final soloud = SoLoud.instance;
+      if (!soloud.isInitialized) return null;
       if (!soloud.getVisualizationEnabled()) {
         soloud.setVisualizationEnabled(true);
         soloud.setFftSmoothing(0.75);
@@ -1126,8 +1150,9 @@ class MusicPlayer extends ChangeNotifier {
 
   /// Визуализация не нужна (свёрнуто, не играет): движок не считает FFT.
   void stopSpectrum() {
-    final soloud = SoLoud.instance;
+    if (!_engineTouched) return;
     try {
+      final soloud = SoLoud.instance;
       if (soloud.isInitialized && soloud.getVisualizationEnabled()) soloud.setVisualizationEnabled(false);
     } catch (_) {}
   }

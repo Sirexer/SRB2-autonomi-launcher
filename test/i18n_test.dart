@@ -24,14 +24,22 @@ void main() {
     expect(i18n.code, 'en');
   });
 
-  test('every placeholder in ru.json matches its key', () {
+  test('every placeholder and key in all lang/*.json files matches ru.json', () {
     final ru = jsonDecode(File('lang/ru.json').readAsStringSync()) as Map<String, dynamic>;
+    final expectedKeys = {for (final k in ru.keys) if (!k.startsWith('_')) k};
     final ph = RegExp(r'\{\w+\}');
-    for (final e in ru.entries) {
-      if (e.key.startsWith('_')) continue;
-      expect(ph.allMatches(e.value as String).map((m) => m[0]).toSet(),
-          ph.allMatches(e.key).map((m) => m[0]).toSet(),
-          reason: e.key);
+    for (final file in Directory('lang').listSync().whereType<File>().where((f) => f.path.endsWith('.json'))) {
+      final map = jsonDecode(file.readAsStringSync()) as Map<String, dynamic>;
+      for (final k in expectedKeys) {
+        expect(map.containsKey(k), isTrue, reason: '${file.path} missing key: $k');
+      }
+      for (final e in map.entries) {
+        if (e.key.startsWith('_')) continue;
+        expect(e.value.toString().trim(), isNotEmpty, reason: '${file.path}: ${e.key}');
+        expect(ph.allMatches(e.value as String).map((m) => m[0]).toSet(),
+            ph.allMatches(e.key).map((m) => m[0]).toSet(),
+            reason: '${file.path}: ${e.key}');
+      }
     }
   });
 }

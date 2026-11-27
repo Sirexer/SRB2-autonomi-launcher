@@ -618,4 +618,23 @@ void main() {
     expect(MusicPlayer.exportExtension(MusicFormat.it, Uint8List(0)), 'it');
     expect(MusicPlayer.exportExtension(MusicFormat.nsf, Uint8List.fromList(ascii.encode('NSFE...'))), 'nsfe');
   });
+
+  test('MusicPlayer safely stops, shuts down and reports missing audio DLL without crashing', () async {
+    final player = MusicPlayer();
+    expect(player.spectrum(), isNull);
+    player.stopSpectrum();
+    await player.stop();
+    await player.shutdown();
+
+    final ogg = p.join(dir.path, 'song.ogg');
+    File(ogg).writeAsBytesSync(fakeOgg({}));
+    const t = MusicTrack(file: 'missing_song', entry: 'song.ogg', lump: 'SONG');
+    await player.play(MusicTrack(file: ogg, entry: 'song.ogg', lump: 'SONG'));
+    // На тестовом раннере без flutter_soloud_plugin.dll ошибка ловится в player.error, не падая.
+    expect(player.error, isNotNull);
+    expect(player.loading, isFalse);
+    await player.play(t);
+    expect(player.error, isNotNull);
+    player.dispose();
+  });
 }
