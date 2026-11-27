@@ -2811,8 +2811,14 @@ class _MainLauncherScreenState extends State<MainLauncherScreen> {
                     selected: _selectedLocalFile == f,
                     leading: const Icon(Icons.insert_drive_file_outlined, size: 20),
                     title: Text(p.basename(f), overflow: TextOverflow.ellipsis),
-                    subtitle: Text(p.relative(p.dirname(f), from: srb2FolderPath ?? p.dirname(f)),
-                        style: const TextStyle(fontSize: 11), overflow: TextOverflow.ellipsis),
+                    subtitle: Text(
+                      switch (p.relative(p.dirname(f), from: srb2FolderPath ?? p.dirname(f))) {
+                        '.' => tr('In the root folder'),
+                        final rel => rel,
+                      },
+                      style: const TextStyle(fontSize: 11),
+                      overflow: TextOverflow.ellipsis,
+                    ),
                     onTap: () => setState(() {
                       _selectedLocalFile = f;
                       selectedMod = null;

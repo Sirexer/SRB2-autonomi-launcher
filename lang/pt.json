@@ -1748,5 +1748,6 @@
   "Detect with gamepad": "Detectar com gamepad",
   "Gamepad controls ({game}, Player {p})": "Controles do gamepad ({game}, Jogador {p})",
   "Tilt a stick, press a trigger, D-Pad or gamepad button...": "Incline um analógico, aperte um gatilho, direcional ou botão do gamepad...",
-  "Trigger deadzone": "Zona morta dos gatilhos"
+  "Trigger deadzone": "Zona morta dos gatilhos",
+  "In the root folder": "Na pasta raiz"
 }

@@ -1748,5 +1748,6 @@
   "Detect with gamepad": "Mit Gamepad erkennen",
   "Gamepad controls ({game}, Player {p})": "Gamepad-Steuerung ({game}, Spieler {p})",
   "Tilt a stick, press a trigger, D-Pad or gamepad button...": "Neige einen Stick, drücke einen Trigger, das D-Pad oder eine Gamepad-Taste...",
-  "Trigger deadzone": "Trigger-Totzone"
+  "Trigger deadzone": "Trigger-Totzone",
+  "In the root folder": "Im Stammordner"
 }

@@ -1748,5 +1748,6 @@
   "Detect with gamepad": "Визначити з геймпада",
   "Gamepad controls ({game}, Player {p})": "Керування з геймпада ({game}, Гравець {p})",
   "Tilt a stick, press a trigger, D-Pad or gamepad button...": "Відхиліть стік, натисніть курок, хрестовину або кнопку геймпада...",
-  "Trigger deadzone": "Мертва зона курків"
+  "Trigger deadzone": "Мертва зона курків",
+  "In the root folder": "У кореневій теці"
 }
