@@ -1692,45 +1692,53 @@ class _MainLauncherScreenState extends State<MainLauncherScreen> {
   /// Где искать музыку: у каждой игры — её файлы, скачанные аддоны и
   /// другие загрузки (в этом порядке — так же идут разделы плеера).
   Future<List<MusicSource>> _musicSources() async {
-    final out = <MusicSource>[];
     final missing = <String, List<String>>{};
-    for (final g in Games.enabled) {
-      try {
-        final folder = await _folderOf(g);
-        final launch = await _launchOf(g);
-        final found = await GameFiles.resolveAsync(g, folder, launch, g.musicFiles);
-        for (final f in found) {
-          out.add(MusicSource(f, g.id, MusicCategory.game));
-        }
-        // Для подсказки в плеере: что из файлов игры не нашлось.
-        missing[g.id] = [
-          for (final rel in g.musicFiles)
-            if (!found.any((f) => p.basename(f).toLowerCase() == p.basename(rel).toLowerCase())) rel,
-        ];
-        if (folder == null) continue;
-        // Название аддона — чтобы плеер показывал, из какого он аддона.
-        final names = {
-          for (final group in manifestGroups.values)
-            for (final m in group) m.key: m.name,
-        };
-        for (final MapEntry(key: modKey, value: files) in (await _downloadedModFiles(g, folder)).entries) {
-          for (final f in files) {
-            out.add(MusicSource(f, g.id, MusicCategory.addons, names[modKey] ?? ''));
+    final names = {
+      for (final group in manifestGroups.values)
+        for (final m in group) m.key: m.name,
+    };
+    final perGame = await Future.wait([
+      for (final g in Games.enabled)
+        () async {
+          final gameOut = <MusicSource>[];
+          try {
+            final folder = await _folderOf(g);
+            final launch = await _launchOf(g);
+            final found = await GameFiles.resolveAsync(g, folder, launch, g.musicFiles);
+            for (final f in found) {
+              gameOut.add(MusicSource(f, g.id, MusicCategory.game));
+            }
+            // Для подсказки в плеере: что из файлов игры не нашлось.
+            missing[g.id] = [
+              for (final rel in g.musicFiles)
+                if (!found.any((f) => p.basename(f).toLowerCase() == p.basename(rel).toLowerCase())) rel,
+            ];
+            if (folder == null) return gameOut;
+            final (mods, downloads, addons) = await (
+              _downloadedModFiles(g, folder),
+              _otherDownloads(p.joinAll([folder, ...g.downloadPath])),
+              _folderAddons(g, folder),
+            ).wait;
+            for (final MapEntry(key: modKey, value: files) in mods.entries) {
+              for (final f in files) {
+                gameOut.add(MusicSource(f, g.id, MusicCategory.addons, names[modKey] ?? ''));
+              }
+            }
+            for (final f in downloads) {
+              gameOut.add(MusicSource(f, g.id, MusicCategory.downloads));
+            }
+            for (final f in addons) {
+              gameOut.add(MusicSource(f, g.id, MusicCategory.folder));
+            }
+          } catch (e) {
+            // Папка игры недоступна — без её музыки.
+            AppLog.console('[music] ${g.id}: $e');
           }
-        }
-        for (final f in await _otherDownloads(p.joinAll([folder, ...g.downloadPath]))) {
-          out.add(MusicSource(f, g.id, MusicCategory.downloads));
-        }
-        for (final f in await _folderAddons(g, folder)) {
-          out.add(MusicSource(f, g.id, MusicCategory.folder));
-        }
-      } catch (e) {
-        // Папка игры недоступна — без её музыки.
-        AppLog.console('[music] ${g.id}: $e');
-      }
-    }
+          return gameOut;
+        }(),
+    ]);
     _player.missingGameFiles = missing;
-    return out;
+    return [for (final list in perGame) ...list];
   }
 
   /// Медиаклавиши клавиатуры управляют плеером на любой вкладке.

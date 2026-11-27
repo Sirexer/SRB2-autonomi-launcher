@@ -1390,7 +1390,7 @@
   "Next spectator / coop view": "Следующий вид наблюдения",
   "Previous view": "Предыдущий вид",
   "Renderer": "Рендерер",
-  "Software (classic 8-bit look) or OpenGL hardware acceleration.": "Software (классический 8-битный вид) или аппаратный OpenGL.",
+  "Software or OpenGL hardware acceleration.": "Software или аппаратный OpenGL.",
   "Fullscreen": "Полноэкранный режим",
   "Display game in fullscreen mode.": "Запускать игру на весь экран.",
   "Fullscreen width": "Ширина (полный экран)",

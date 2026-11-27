@@ -1390,7 +1390,7 @@
   "Next spectator / coop view": "Próxima visão de espectador / co-op",
   "Previous view": "Visão anterior",
   "Renderer": "Renderizador",
-  "Software (classic 8-bit look) or OpenGL hardware acceleration.": "Software (visual clássico de 8 bits) ou aceleração por hardware OpenGL.",
+  "Software or OpenGL hardware acceleration.": "Software ou aceleração por hardware OpenGL.",
   "Fullscreen": "Tela cheia",
   "Display game in fullscreen mode.": "Exibir o jogo em modo tela cheia.",
   "Fullscreen width": "Largura em tela cheia",

@@ -36,11 +36,26 @@ class MusicDetails {
       AddonArchive? archive;
       try {
         if (list.any((x) => x.$1.isNotEmpty)) archive = AddonArchive.open(file);
+        final zipIndex = archive != null && archive.isZip ? {for (final x in archive.entries) x.path: x} : null;
         for (final (entry, format) in list) {
           TrackDetails? details;
           try {
-            final bytes = entry.isEmpty ? File(file).readAsBytesSync() : MusicScanner.readEntry(archive!, entry);
-            details = of(bytes, format, openmpt: openmpt, gme: gme);
+            if (archive != null && entry.isNotEmpty) {
+              final archEntry = zipIndex != null
+                  ? zipIndex[entry]
+                  : (entry.startsWith('#') ? _wadEntry(archive, entry) : null);
+              if (archEntry == null) throw const FileSystemException('Track not found');
+              if (format == MusicFormat.flac) {
+                try {
+                  final head = archive.readHead(archEntry, 64);
+                  final quick = of(head, format, openmpt: openmpt, gme: gme);
+                  if (quick != null && quick.durationMs != null) details = quick;
+                } catch (_) {}
+              }
+              details ??= of(Uint8List.fromList(archive.read(archEntry)), format, openmpt: openmpt, gme: gme);
+            } else {
+              details = of(File(file).readAsBytesSync(), format, openmpt: openmpt, gme: gme);
+            }
           } catch (_) {
             details = const TrackDetails(); // не читается — не пробуем снова
           }
@@ -53,6 +68,11 @@ class MusicDetails {
       }
     }
     return out;
+  }
+
+  static ArchiveEntry? _wadEntry(AddonArchive a, String entry) {
+    final i = int.tryParse(entry.substring(1));
+    return i != null && i >= 0 && i < a.entries.length ? a.entries[i] : null;
   }
 
   /// Сведения о треке; null — нужна библиотека, которой нет.

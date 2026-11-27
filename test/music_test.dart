@@ -637,4 +637,45 @@ void main() {
     expect(player.error, isNotNull);
     player.dispose();
   });
+
+  test('scanFilesInBackground streams batches across multiple files', () async {
+    final files = <String>[];
+    for (var i = 0; i < 6; i++) {
+      final f = p.join(dir.path, 'track_$i.ogg');
+      File(f).writeAsBytesSync(fakeOgg({}, granule: 44100));
+      files.add(f);
+    }
+    // Замыкание с непередаваемым в изолят объектом (как MusicPlayer с UI-слушателями).
+    final unsendable = MusicPlayer()..addListener(() {});
+    final batched = <String, MusicFileInfo>{};
+    var batchCalls = 0;
+    final all = await MusicScanner.scanFilesInBackground(
+      files,
+      onBatch: (b) {
+        unsendable.tracks;
+        batchCalls++;
+        batched.addAll(b);
+      },
+    );
+    expect(all.keys, unorderedEquals(files));
+    expect(batched.keys, unorderedEquals(files));
+    expect(batchCalls, greaterThan(0));
+
+    // Сквозная проверка MusicPlayer.scan с потоковым обновлением списка.
+    await unsendable.scan([for (final f in files) MusicSource(f, '', MusicCategory.opened)]);
+    expect(unsendable.tracks.map((t) => t.file), unorderedEquals(files));
+    unsendable.dispose();
+  });
+
+  test('MusicDetails.read parses deflated FLAC header inside PK3', () {
+    final flac = Uint8List(4096);
+    flac.setAll(0, ascii.encode('fLaC'));
+    flac.setAll(4, [0x80, 0, 0, 34]);
+    flac.setAll(18, [0x0A, 0xC4, 0x42, 0xF0, 0x00, 0x01, 0x58, 0x88]);
+    final pk3 = p.join(dir.path, 'flac_pack.pk3');
+    File(pk3).writeAsBytesSync(buildZip([('music/O_TEST.flac', flac)]));
+
+    final details = MusicDetails.read([(pk3, 'music/O_TEST.flac', MusicFormat.flac)]);
+    expect(details[(pk3, 'music/O_TEST.flac')]?.durationMs, 2000);
+  });
 }

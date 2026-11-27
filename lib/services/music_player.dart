@@ -392,18 +392,8 @@ class MusicPlayer extends ChangeNotifier {
     }
     final list = byPath.values.toList();
     await _loadScanCache();
-    final stamps = <String, String>{for (final s in list) s.path: await _stamp(s.path)};
-    final missing = [
-      for (final s in list)
-        if (stamps[s.path]!.isNotEmpty && !_scanCache.containsKey(stamps[s.path])) s.path,
-    ];
-    if (missing.isNotEmpty) {
-      try {
-        await AppActivity.whenVisible();
-        final found = await MusicScanner.scanFilesInBackground(missing);
-        found.forEach((path, info) => _scanCache[stamps[path]!] = info);
-      } catch (_) {}
-    }
+    final stampList = await Future.wait([for (final s in list) _stamp(s.path)]);
+    final stamps = <String, String>{for (var i = 0; i < list.length; i++) list[i].path: stampList[i]};
     if (token != _scanToken) return;
     _sources = list;
     _stamps = stamps;
@@ -411,6 +401,42 @@ class MusicPlayer extends ChangeNotifier {
       for (final s in list)
         if (_scanCache[stamps[s.path]] case final info?) s.path: info,
     };
+    if (_infos.isNotEmpty) {
+      _compose();
+      notifyListeners();
+    }
+    final missing = [
+      for (final s in list)
+        if (stamps[s.path]!.isNotEmpty && !_scanCache.containsKey(stamps[s.path])) s.path,
+    ];
+    if (missing.isNotEmpty) {
+      try {
+        await AppActivity.whenVisible();
+        if (token != _scanToken) return;
+        final uiWatch = Stopwatch()..start();
+        final found = await MusicScanner.scanFilesInBackground(
+          missing,
+          onBatch: (batch) {
+            if (token != _scanToken) return;
+            batch.forEach((path, info) {
+              _scanCache[stamps[path]!] = info;
+              _infos[path] = info;
+            });
+            if (uiWatch.elapsedMilliseconds >= 400) {
+              uiWatch.reset();
+              _compose();
+              notifyListeners();
+            }
+          },
+        );
+        if (token != _scanToken) return;
+        found.forEach((path, info) {
+          _scanCache[stamps[path]!] = info;
+          _infos[path] = info;
+        });
+      } catch (_) {}
+    }
+    if (token != _scanToken) return;
     _compose();
     scanning = false;
     notifyListeners();
@@ -480,35 +506,71 @@ class MusicPlayer extends ChangeNotifier {
   Future<void> _readDetails(int token) async {
     final openmpt = NativeMusic.find(NativeLib.openmpt, libraryDirs);
     final gme = NativeMusic.find(NativeLib.gme, libraryDirs);
-    final pending = <(String, String, MusicFormat)>[];
+    final pendingByFile = <String, List<(String, String, MusicFormat)>>{};
+    var totalPending = 0;
     for (final s in _sources) {
       final info = _infos[s.path];
       if (info == null) continue;
       for (final (entry, _, format) in info.tracks) {
         if (info.details.containsKey(entry)) continue;
         if ((format.isTracker && openmpt == null) || (format.isGme && gme == null)) continue;
-        pending.add((s.path, entry, format));
+        (pendingByFile[s.path] ??= []).add((s.path, entry, format));
+        totalPending++;
       }
     }
-    if (pending.isEmpty) return;
+    if (totalPending == 0) return;
+    // Пачки по целым файлам (чтобы не переоткрывать один архив много раз).
+    final batches = <List<(String, String, MusicFormat)>>[];
+    var current = <(String, String, MusicFormat)>[];
+    for (final list in pendingByFile.values) {
+      if (current.isNotEmpty && current.length + list.length > 40) {
+        batches.add(current);
+        current = [];
+      }
+      current.addAll(list);
+      if (current.length >= 40) {
+        batches.add(current);
+        current = [];
+      }
+    }
+    if (current.isNotEmpty) batches.add(current);
     readingDetails = true;
     notifyListeners();
+    var dirty = false;
     try {
-      for (var i = 0; i < pending.length; i += 40) {
-        final batch = pending.sublist(i, math.min(i + 40, pending.length));
-        await AppActivity.whenVisible(); // окно свёрнуто — дочитаем потом
-        if (token != _scanToken) return;
-        final found = await MusicDetails.readInBackground(batch, openmpt: openmpt, gme: gme);
-        if (token != _scanToken) return;
-        found.forEach((key, d) => _infos[key.$1]?.details[key.$2] = d);
-        _compose();
-        notifyListeners();
+      final workers = math.min(batches.length, math.max(1, math.min(Platform.numberOfProcessors ~/ 3, 2)));
+      var nextBatch = 0;
+      final uiWatch = Stopwatch()..start();
+      Future<void> worker() async {
+        while (nextBatch < batches.length) {
+          final batch = batches[nextBatch++];
+          await AppActivity.whenVisible(); // окно свёрнуто — дочитаем потом
+          if (token != _scanToken) return;
+          final found = await MusicDetails.readInBackground(batch, openmpt: openmpt, gme: gme);
+          if (token != _scanToken) return;
+          if (found.isNotEmpty) {
+            found.forEach((key, d) => _infos[key.$1]?.details[key.$2] = d);
+            dirty = true;
+            if (uiWatch.elapsedMilliseconds >= 400) {
+              uiWatch.reset();
+              dirty = false;
+              _compose();
+              notifyListeners();
+            }
+          }
+          if (nextBatch < batches.length) {
+            await Future<void>.delayed(const Duration(milliseconds: 16));
+          }
+        }
       }
+
+      await Future.wait([for (var i = 0; i < workers; i++) worker()]);
     } catch (_) {
       // остальное прочитаем при следующем поиске
     } finally {
       if (token == _scanToken) {
         readingDetails = false;
+        if (dirty) _compose();
         notifyListeners();
         _saveScanCache();
       }
@@ -523,6 +585,30 @@ class MusicPlayer extends ChangeNotifier {
 
   Future<File> _scanCacheFile() async => File(p.join((await _dataDir('music')).path, 'scan_cache.json'));
 
+  static Future<(int, Map<String, MusicFileInfo>)?> _runDecodeCache(String text) =>
+      Isolate.run(() => _decodeCache(text));
+
+  static Future<String> _runEncodeCache(int version, Map<String, MusicFileInfo> files) =>
+      Isolate.run(() => _encodeCache(version, files));
+
+  static (int, Map<String, MusicFileInfo>)? _decodeCache(String text) {
+    final j = jsonDecode(text) as Map<String, Object?>;
+    final v = j['v'];
+    if (v is! int || (v != _scanCacheVersion && v != _scanCacheMidiStale)) return null;
+    final out = <String, MusicFileInfo>{};
+    for (final e in (j['files'] as Map).entries) {
+      final info = MusicFileInfo.fromJson((e.value as Map).cast<String, Object?>());
+      if (v == _scanCacheMidiStale) dropSynthDetails(info);
+      out[e.key as String] = info;
+    }
+    return (v, out);
+  }
+
+  static String _encodeCache(int version, Map<String, MusicFileInfo> files) => jsonEncode({
+        'v': version,
+        'files': {for (final e in files.entries) e.key: e.value.toJson()},
+      });
+
   Future<void> _loadScanCache() async {
     if (_scanCacheLoaded) return;
     _scanCacheLoaded = true;
@@ -530,14 +616,8 @@ class MusicPlayer extends ChangeNotifier {
       final f = await _scanCacheFile();
       if (!await f.exists()) return;
       final text = await f.readAsString();
-      final j = await Isolate.run(() => jsonDecode(text)) as Map<String, Object?>;
-      final v = j['v'];
-      if (v != _scanCacheVersion && v != _scanCacheMidiStale) return;
-      for (final e in (j['files'] as Map).entries) {
-        final info = MusicFileInfo.fromJson((e.value as Map).cast<String, Object?>());
-        if (v == _scanCacheMidiStale) dropSynthDetails(info);
-        _scanCache[e.key as String] = info;
-      }
+      final decoded = await _runDecodeCache(text);
+      if (decoded != null) _scanCache.addAll(decoded.$2);
     } catch (_) {
       // повреждённый кэш — найдём заново
     }
@@ -555,12 +635,10 @@ class MusicPlayer extends ChangeNotifier {
   void _saveScanCache() {
     final keep = {for (final s in _stamps.values) if (s.isNotEmpty) s};
     _scanCache.removeWhere((k, _) => !keep.contains(k));
-    final json = jsonEncode({
-      'v': _scanCacheVersion,
-      'files': {for (final e in _scanCache.entries) e.key: e.value.toJson()},
-    });
+    final snapshot = Map<String, MusicFileInfo>.from(_scanCache);
     _saving = (_saving ?? Future<void>.value()).then((_) async {
       try {
+        final json = await _runEncodeCache(_scanCacheVersion, snapshot);
         await (await _scanCacheFile()).writeAsString(json);
       } catch (_) {}
     });
@@ -1324,6 +1402,8 @@ class MusicPlayer extends ChangeNotifier {
 
   @override
   void dispose() {
+    _scanToken++;
+    _token++;
     AppActivity.visible.removeListener(_onVisibility);
     MediaKeys.disable();
     _timer?.cancel();

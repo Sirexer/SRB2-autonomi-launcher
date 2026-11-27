@@ -966,7 +966,7 @@ class Srb2ConfigSchema {
     CvarSpec(
       name: 'renderer',
       label: 'Renderer',
-      description: 'Software (classic 8-bit look) or OpenGL hardware acceleration.',
+      description: 'Software or OpenGL hardware acceleration.',
       tab: ConfigSubTab.video,
       group: 'Screen & Renderer',
       kind: CvarKind.dropdown,

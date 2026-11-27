@@ -370,6 +370,9 @@ List<MusicTrack> arrangeTracks(
   Set<String> keep = const {},
 }) {
   final q = query.trim().toLowerCase();
+  final lowerBase = <String, String>{};
+  final lowerGame = <String, String>{for (final e in gameNames.entries) e.key: e.value.toLowerCase()};
+  String baseLower(String file) => lowerBase[file] ??= _baseName(file).toLowerCase();
   bool matches(MusicTrack t) =>
       q.isEmpty ||
       t.lump.toLowerCase().contains(q) ||
@@ -377,8 +380,8 @@ List<MusicTrack> arrangeTracks(
       t.altTitle.toLowerCase().contains(q) ||
       t.displayAuthors.toLowerCase().contains(q) ||
       (t.details?.game.toLowerCase().contains(q) ?? false) ||
-      _baseName(t.file).toLowerCase().contains(q) ||
-      (gameNames[t.game]?.toLowerCase().contains(q) ?? false);
+      baseLower(t.file).contains(q) ||
+      (lowerGame[t.game]?.contains(q) ?? false);
   // Порядок разделов — по первому появлению.
   final sectionRank = <String, int>{};
   for (final t in tracks) {
@@ -418,7 +421,7 @@ List<MusicTrack> arrangeTracks(
   return [for (final f in files) ...groups[f]!];
 }
 
-String _baseName(String path) => path.substring(path.lastIndexOf(RegExp(r'[/\\]')) + 1);
+String _baseName(String path) => path.substring(math.max(path.lastIndexOf('/'), path.lastIndexOf('\\')) + 1);
 
 /// Ключи треков-дубликатов: такая же музыка (тот же [MusicTrack.fingerprint])
 /// есть в другом треке, который остаётся. Остаётся трек из более раннего
@@ -520,22 +523,53 @@ class MusicScanner {
   /// Что в файлах [files] (путь → сведения), в отдельном изоляте.
   /// Пачками по несколько файлов: если на каком-то файле изолят упал, остальные
   /// всё равно разберутся (а этот — отдельно или в следующий раз).
-  static Future<Map<String, MusicFileInfo>> scanFilesInBackground(List<String> files) async {
+  static Future<Map<String, MusicFileInfo>> _scanChunk(List<String> chunk) =>
+      Isolate.run(() => {for (final f in chunk) f: scanFile(f)});
+
+  static Future<MusicFileInfo> _scanOne(String path) => Isolate.run(() => scanFile(path));
+
+  static Future<Map<String, MusicFileInfo>> scanFilesInBackground(
+    List<String> files, {
+    void Function(Map<String, MusicFileInfo> batch)? onBatch,
+  }) async {
     final out = <String, MusicFileInfo>{};
-    for (var i = 0; i < files.length; i += 8) {
-      final chunk = files.sublist(i, math.min(i + 8, files.length));
-      try {
-        out.addAll(await Isolate.run(() => {for (final f in chunk) f: scanFile(f)}));
-      } catch (_) {
-        for (final f in chunk) {
-          try {
-            out[f] = await Isolate.run(() => scanFile(f));
-          } catch (e) {
-            AppLog.console('[music] cannot scan $f: $e');
+    if (files.isEmpty) return out;
+    // Не занимаем больше половины ядер (и максимум 3), чтобы интерфейс и
+    // ОС оставались отзывчивыми даже при сотнях архивов.
+    final workers = math.min(files.length, math.max(1, math.min(Platform.numberOfProcessors ~/ 2, 3)));
+    final chunkSize = files.length <= 24 ? math.max(1, (files.length / (workers * 2)).ceil()) : 10;
+    final chunks = <List<String>>[
+      for (var i = 0; i < files.length; i += chunkSize) files.sublist(i, math.min(i + chunkSize, files.length)),
+    ];
+    final pool = math.min(workers, chunks.length);
+    var nextChunk = 0;
+    Future<void> worker() async {
+      while (nextChunk < chunks.length) {
+        final chunk = chunks[nextChunk++];
+        Map<String, MusicFileInfo> found;
+        try {
+          found = await _scanChunk(chunk);
+        } catch (_) {
+          found = {};
+          for (final f in chunk) {
+            try {
+              found[f] = await _scanOne(f);
+            } catch (e) {
+              AppLog.console('[music] cannot scan $f: $e');
+            }
           }
+        }
+        if (found.isNotEmpty) {
+          out.addAll(found);
+          onBatch?.call(found);
+        }
+        if (nextChunk < chunks.length) {
+          await Future<void>.delayed(const Duration(milliseconds: 8));
         }
       }
     }
+
+    await Future.wait([for (var i = 0; i < pool; i++) worker()]);
     return out;
   }
 
@@ -666,11 +700,26 @@ class MusicScanner {
           }
           final prefixed = e.name.startsWith('O_') || e.name.startsWith('D_');
           if ((!inMarkers && !prefixed) || e.size == 0) continue;
-          var format = _sniff(a, e);
-          // В WAD имена lump могут повторяться — запись различаем по номеру.
-          if (format == MusicFormat.unknown) continue;
+          // Для ZWAD readHead всё равно распаковывает весь lump целиком — читаем один раз.
+          MusicFormat format;
+          String fp;
+          if (e.method == ArchiveEntry.lzfWad && e.size <= 64 << 20) {
+            try {
+              final data = a.read(e);
+              format = detectFormat(data);
+              if (format == MusicFormat.unknown) continue;
+              fp = '${e.size}:${MapScanner.crc32(data).toRadixString(16)}';
+            } catch (_) {
+              continue;
+            }
+          } else {
+            format = _sniff(a, e);
+            // В WAD имена lump могут повторяться — запись различаем по номеру.
+            if (format == MusicFormat.unknown) continue;
+            fp = _fingerprint(a, e);
+          }
           out.add((path, '#$i', musicName(e.name), format));
-          fingerprints['#$i'] = _fingerprint(a, e);
+          fingerprints['#$i'] = fp;
         }
       }
     } finally {
