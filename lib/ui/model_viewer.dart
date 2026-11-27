@@ -19,6 +19,10 @@ class ModelViewer extends StatefulWidget {
   /// Номер кадра модели.
   final int frame;
 
+  /// Следующий кадр и доля перехода (0..1) для плавной интерполяции вершин.
+  final int? nextFrame;
+  final double interp;
+
   /// Поворот вокруг вертикали при открытии (радианы от «лицом к нам»).
   final double initialYaw;
 
@@ -27,6 +31,8 @@ class ModelViewer extends StatefulWidget {
     required this.mesh,
     this.texture,
     this.frame = 0,
+    this.nextFrame,
+    this.interp = 0,
     this.initialYaw = 0,
   });
 
@@ -39,6 +45,8 @@ class _ModelViewerState extends State<ModelViewer> {
   static const _frontYaw = -math.pi / 2 - 0.5;
   late double _yaw = _frontYaw + widget.initialYaw;
   double _pitch = 0.25, _zoom = 1;
+  Offset _pan = Offset.zero;
+  bool _panning = false;
 
   /// Размер и центр — по всем кадрам: модель не прыгает при анимации.
   late List<double> _bounds = widget.mesh.bounds();
@@ -57,7 +65,19 @@ class _ModelViewerState extends State<ModelViewer> {
   double _ratio = 1;
 
   /// Что нужно нарисовать сейчас (сравнивается с [_drawn]).
-  Object get _wanted => (widget.mesh, widget.texture, _frame, _yaw, _pitch, _zoom, _size, _ratio);
+  Object get _wanted => (
+        widget.mesh,
+        widget.texture,
+        _frame,
+        _nextFrame,
+        _interp,
+        _yaw,
+        _pitch,
+        _zoom,
+        _pan,
+        _size,
+        _ratio,
+      );
 
   /// Рисует, если картинка устарела; пока рисуется — новый запрос
   /// подождёт и возьмёт последнее положение.
@@ -74,6 +94,10 @@ class _ModelViewerState extends State<ModelViewer> {
         widget.texture,
         w,
         h,
+        nextFrame: _nextFrame,
+        interp: _interp,
+        panX: _pan.dx * _ratio,
+        panY: _pan.dy * _ratio,
         yaw: _yaw,
         pitch: _pitch,
         zoom: _zoom,
@@ -109,10 +133,34 @@ class _ModelViewerState extends State<ModelViewer> {
   }
 
   int get _frame => widget.frame.clamp(0, math.max(0, widget.mesh.frames - 1));
+  int? get _nextFrame => widget.nextFrame?.clamp(0, math.max(0, widget.mesh.frames - 1));
+  double get _interp => (_nextFrame == null || _nextFrame == _frame) ? 0.0 : widget.interp.clamp(0.0, 1.0);
 
   @override
   Widget build(BuildContext context) {
     return Listener(
+      onPointerDown: (e) {
+        if ((e.buttons & kSecondaryMouseButton) != 0 && !_panning) {
+          setState(() => _panning = true);
+        }
+      },
+      onPointerMove: (e) {
+        if ((e.buttons & kSecondaryMouseButton) != 0) {
+          setState(() {
+            _panning = true;
+            _pan = Offset(
+              (_pan.dx + e.delta.dx).clamp(-_size.width, _size.width),
+              (_pan.dy + e.delta.dy).clamp(-_size.height, _size.height),
+            );
+          });
+        }
+      },
+      onPointerUp: (_) {
+        if (_panning) setState(() => _panning = false);
+      },
+      onPointerCancel: (_) {
+        if (_panning) setState(() => _panning = false);
+      },
       onPointerSignal: (e) {
         if (e is PointerScrollEvent) {
           setState(() => _zoom = (_zoom * math.pow(0.999, e.scrollDelta.dy)).clamp(0.3, 6.0));
@@ -127,9 +175,10 @@ class _ModelViewerState extends State<ModelViewer> {
           _yaw = _frontYaw + widget.initialYaw;
           _pitch = 0.25;
           _zoom = 1;
+          _pan = Offset.zero;
         }),
         child: MouseRegion(
-          cursor: SystemMouseCursors.grab,
+          cursor: _panning ? SystemMouseCursors.move : SystemMouseCursors.grab,
           child: LayoutBuilder(
             builder: (context, box) {
               _size = box.biggest;

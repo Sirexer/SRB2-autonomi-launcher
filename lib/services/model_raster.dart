@@ -26,6 +26,10 @@ Uint8List rasterizeModel(
   RasterTexture? texture,
   int width,
   int height, {
+  int? nextFrame,
+  double interp = 0,
+  double panX = 0,
+  double panY = 0,
   required double yaw,
   required double pitch,
   required double zoom,
@@ -48,18 +52,24 @@ Uint8List rasterizeModel(
   for (final s in mesh.surfaces) {
     final last = s.verts == 0 ? 0 : s.xyz.length ~/ (3 * s.verts) - 1;
     final f = frame < 0 ? 0 : (frame > last ? last : frame);
+    final nf = nextFrame == null ? f : (nextFrame < 0 ? 0 : (nextFrame > last ? last : nextFrame));
+    final t = nf == f ? 0.0 : interp.clamp(0.0, 1.0);
     // Вершины кадра на экране: x, y и глубина (дальше — больше).
     final n = s.verts;
     final px = Float32List(n), py = Float32List(n), pz = Float32List(n);
     final vx = Float32List(n), vy = Float32List(n), vz = Float32List(n);
     final base = f * n * 3;
+    final nextBase = nf * n * 3;
     for (var i = 0; i < n; i++) {
       // Ось Y — наоборот: игра ставит модель в мир как (x, z, −y) при мире
       // (x, z, y) (r_opengl.c, DrawModelEx), так что в игре модель отражена
       // относительно файла; иначе надписи и асимметрия выходят зеркально.
-      final x = s.xyz[base + i * 3] - cx,
-          y = cy - s.xyz[base + i * 3 + 1],
-          z = s.xyz[base + i * 3 + 2] - cz;
+      final idx = base + i * 3;
+      final nIdx = nextBase + i * 3;
+      final mx = t == 0.0 ? s.xyz[idx] : s.xyz[idx] + (s.xyz[nIdx] - s.xyz[idx]) * t;
+      final my = t == 0.0 ? s.xyz[idx + 1] : s.xyz[idx + 1] + (s.xyz[nIdx + 1] - s.xyz[idx + 1]) * t;
+      final mz = t == 0.0 ? s.xyz[idx + 2] : s.xyz[idx + 2] + (s.xyz[nIdx + 2] - s.xyz[idx + 2]) * t;
+      final x = mx - cx, y = cy - my, z = mz - cz;
       final rx = x * cosY - y * sinY;
       final ry = x * sinY + y * cosY;
       final ry2 = ry * cosP - z * sinP;
@@ -67,8 +77,8 @@ Uint8List rasterizeModel(
       vx[i] = rx;
       vy[i] = ry2;
       vz[i] = rz2;
-      px[i] = width / 2 + rx * scale;
-      py[i] = height / 2 - rz2 * scale;
+      px[i] = width / 2 + panX + rx * scale;
+      py[i] = height / 2 + panY - rz2 * scale;
       pz[i] = ry2;
     }
     for (var t = 0; t + 2 < s.tris.length; t += 3) {

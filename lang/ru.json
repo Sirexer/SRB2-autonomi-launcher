@@ -1147,7 +1147,7 @@
   "{n} frames": "Кадров: {n}",
   "no texture: the game uses the sprite": "нет текстуры — игра натянет спрайт",
   "Could not read the model: {error}": "Не удалось прочитать модель: {error}",
-  "Drag to rotate, scroll to zoom, double-click to reset": "Перетаскивание — поворот, колесо — масштаб, двойной щелчок — сброс",
+  "Drag to rotate, right-drag to move, scroll to zoom, double-click to reset": "Перетаскивание — поворот, ПКМ — перемещение, колесо — масштаб, двойной щелчок — сброс",
   "Versions": "Версии",
   "Pick a version to look at it, then use it in the pack.": "Выберите версию, чтобы посмотреть её, и возьмите в пак.",
   "scale {n}": "масштаб {n}",

@@ -1147,7 +1147,7 @@
   "{n} frames": "{n} Frames",
   "no texture: the game uses the sprite": "keine Textur: Das Spiel nimmt das Sprite",
   "Could not read the model: {error}": "Das Modell konnte nicht gelesen werden: {error}",
-  "Drag to rotate, scroll to zoom, double-click to reset": "Ziehen zum Drehen, Mausrad zum Zoomen, Doppelklick zum Zurücksetzen",
+  "Drag to rotate, right-drag to move, scroll to zoom, double-click to reset": "Ziehen zum Drehen, Rechtsklick-Ziehen zum Verschieben, Mausrad zum Zoomen, Doppelklick zum Zurücksetzen",
   "Versions": "Versionen",
   "Pick a version to look at it, then use it in the pack.": "Wähle eine Version zum Ansehen und übernimm sie ins Paket.",
   "scale {n}": "Skalierung {n}",

@@ -1147,7 +1147,7 @@
   "{n} frames": "{n} quadros",
   "no texture: the game uses the sprite": "sem textura: o jogo usa o sprite",
   "Could not read the model: {error}": "Não foi possível ler o modelo: {error}",
-  "Drag to rotate, scroll to zoom, double-click to reset": "Arraste para girar, role para aproximar, clique duplo para redefinir",
+  "Drag to rotate, right-drag to move, scroll to zoom, double-click to reset": "Arraste para girar, botão direito para mover, role para aproximar, clique duplo para redefinir",
   "Versions": "Versões",
   "Pick a version to look at it, then use it in the pack.": "Escolha uma versão para vê-la e use-a no pacote.",
   "scale {n}": "escala {n}",

@@ -1,10 +1,10 @@
-import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart' show compute;
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:path/path.dart' as p;
 
 import '../i18n.dart';
@@ -110,7 +110,7 @@ class _ModelPreview extends StatefulWidget {
   State<_ModelPreview> createState() => _ModelPreviewState();
 }
 
-class _ModelPreviewState extends State<_ModelPreview> {
+class _ModelPreviewState extends State<_ModelPreview> with SingleTickerProviderStateMixin {
   /// Какая версия на экране (номер в candidates).
   late int _shown = () {
     final chosen = widget.choice.chosen;
@@ -129,32 +129,58 @@ class _ModelPreviewState extends State<_ModelPreview> {
   List<(String, List<int>)> _animations = const [];
   int _animation = 0;
   bool _playing = true;
+  bool _interpolate = true;
 
-  /// Кадр внутри анимации и скорость (кадров в секунду).
-  int _step = 0;
+  /// Дробный шаг анимации (целая часть — кадр, дробная — доля интерполяции)
+  /// и скорость воспроизведения (кадров в секунду).
+  double _phase = 0;
   double _fps = 8;
-  Timer? _timer;
+  late final Ticker _ticker = createTicker(_onTick);
+  Duration _lastTick = Duration.zero;
   static const _speeds = [1.0, 2.0, 4.0, 8.0, 12.0, 20.0, 35.0];
 
   List<int> get _frames => _animations.isEmpty ? const [0] : _animations[_animation].$2;
-  int get _frame => _frames[_step % _frames.length];
+  int get _step => _phase.floor() % _frames.length;
+  int get _frame => _frames[_step];
+  int? get _nextFrame =>
+      (_playing && _interpolate && _frames.length > 1) ? _frames[(_step + 1) % _frames.length] : null;
+  double get _interp => _nextFrame != null ? _phase - _phase.floor() : 0.0;
+
+  void _onTick(Duration elapsed) {
+    final dt = _lastTick == Duration.zero
+        ? 0.0
+        : ((elapsed - _lastTick).inMicroseconds / 1e6).clamp(0.0, 0.1);
+    _lastTick = elapsed;
+    if (dt <= 0 || _frames.length < 2) return;
+    final prevStep = _step;
+    final nextPhase = (_phase + dt * _fps) % _frames.length;
+    if (!_interpolate && nextPhase.floor() % _frames.length == prevStep) {
+      _phase = nextPhase;
+      return;
+    }
+    setState(() => _phase = nextPhase);
+  }
 
   /// Анимация идёт, пока [_playing] и в ней больше одного кадра.
   void _restartTimer() {
-    _timer?.cancel();
-    _timer = null;
-    if (!_playing || _frames.length < 2) return;
-    _timer = Timer.periodic(Duration(microseconds: (1e6 / _fps).round()), (_) {
-      if (mounted) setState(() => _step = (_step + 1) % _frames.length);
-    });
+    if (!_playing || _frames.length < 2) {
+      _ticker.stop();
+      _lastTick = Duration.zero;
+      return;
+    }
+    if (!_ticker.isActive) {
+      _lastTick = Duration.zero;
+      _ticker.start();
+    }
   }
 
   /// Шаг на кадр вперёд или назад; анимация встаёт на паузу.
   void _stepBy(int d) {
     setState(() {
       _playing = false;
-      _step = (_step + d) % _frames.length;
-      if (_step < 0) _step += _frames.length;
+      var s = (_step + d) % _frames.length;
+      if (s < 0) s += _frames.length;
+      _phase = s.toDouble();
     });
     _restartTimer();
   }
@@ -179,7 +205,7 @@ class _ModelPreviewState extends State<_ModelPreview> {
 
   @override
   void dispose() {
-    _timer?.cancel();
+    _ticker.dispose();
     super.dispose();
   }
 
@@ -211,7 +237,7 @@ class _ModelPreviewState extends State<_ModelPreview> {
         _colored = null;
         _animations = anims;
         _animation = stand >= 0 ? stand : 0;
-        _step = 0;
+        _phase = 0;
         _loading = false;
       });
       _restartTimer();
@@ -302,6 +328,8 @@ class _ModelPreviewState extends State<_ModelPreview> {
                                 mesh: model.mesh,
                                 texture: _colored ?? model.texture,
                                 frame: _frame,
+                                nextFrame: _nextFrame,
+                                interp: _interp,
                               ),
                             ),
                     ),
@@ -327,7 +355,7 @@ class _ModelPreviewState extends State<_ModelPreview> {
                             onChanged: (v) {
                               setState(() {
                                 _animation = v ?? 0;
-                                _step = 0;
+                                _phase = 0;
                               });
                               _restartTimer();
                             },
@@ -345,7 +373,10 @@ class _ModelPreviewState extends State<_ModelPreview> {
                                 tooltip: _playing ? tr('Pause') : tr('Play'),
                                 icon: Icon(_playing ? Icons.pause : Icons.play_arrow),
                                 onPressed: () {
-                                  setState(() => _playing = !_playing);
+                                  setState(() {
+                                    _playing = !_playing;
+                                    if (!_playing) _phase = _step.toDouble();
+                                  });
                                   _restartTimer();
                                 },
                               ),
@@ -372,10 +403,21 @@ class _ModelPreviewState extends State<_ModelPreview> {
                               ),
                             ],
                           ),
+                        if (model != null && _frames.length > 1)
+                          FilterChip(
+                            avatar: const Icon(Icons.animation, size: 16),
+                            label: Text(tr('Model interpolation')),
+                            selected: _interpolate,
+                            visualDensity: VisualDensity.compact,
+                            onSelected: (v) {
+                              setState(() => _interpolate = v);
+                              _restartTimer();
+                            },
+                          ),
                         if (model != null)
                           Text(
                             tr('Frame {i} of {n} · {name}', {
-                              'i': '${_step % _frames.length + 1}',
+                              'i': '${_step + 1}',
                               'n': '${_frames.length}',
                               'name': model.mesh.frameNames[_frame.clamp(0, model.mesh.frames - 1)],
                             }),
@@ -396,7 +438,7 @@ class _ModelPreviewState extends State<_ModelPreview> {
                               _recolor();
                             },
                           ),
-                        Text(tr('Drag to rotate, scroll to zoom, double-click to reset'), style: muted),
+                        Text(tr('Drag to rotate, right-drag to move, scroll to zoom, double-click to reset'), style: muted),
                       ],
                     ),
                   ),

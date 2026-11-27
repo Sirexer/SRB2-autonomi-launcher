@@ -2,9 +2,12 @@ import 'dart:convert';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
+import 'package:flutter/gestures.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:srb2_autonomi_launcher/services/model_mesh.dart';
 import 'package:srb2_autonomi_launcher/services/model_raster.dart';
+import 'package:srb2_autonomi_launcher/ui/model_viewer.dart';
 
 /// MD3 с одной частью: треугольник, кадры с именами [frames] (в кадре f
 /// вершины сдвинуты на f по X).
@@ -216,5 +219,123 @@ void main() {
     // Повторы в цвете (как у многих цветов SRB2) — другие ступени.
     expect(blendSkinColor(image, blend, [0, 0, 0, 0, 5, 5, 5, 5, 9, 9, 9, 9, 31, 31, 31, 31], palette),
         [10, 20, 30, 255, 0, 255, 0, 128, 9, 246, 63, 255, 39, 126, 108, 255]);
+  });
+
+  test('model interpolation blends vertex positions linearly between frames', () {
+    // Треугольник перемещается по X: кадр 0 слева (-3..-2), кадр 1 справа (2..3).
+    final xyz = Float32List.fromList(<double>[
+      -3, 0, -0.5, -2, 0, -0.5, -2.5, 0, 0.5, // кадр 0
+      2, 0, -0.5, 3, 0, -0.5, 2.5, 0, 0.5, // кадр 1
+    ]);
+    final m = ModelMesh(
+      [MeshSurface(3, xyz, Float32List(6), Uint32List.fromList([0, 1, 2]))],
+      ['WALK00', 'WALK01'],
+    );
+    const bounds = [-4.0, -1.0, -1.0, 4.0, 1.0, 1.0];
+
+    List<int> xsFor(Uint8List px) {
+      final xs = <int>[];
+      for (var y = 0; y < 64; y++) {
+        for (var x = 0; x < 64; x++) {
+          if (px[(y * 64 + x) * 4 + 3] > 0) xs.add(x);
+        }
+      }
+      return xs;
+    }
+
+    final f0 = rasterizeModel(m, 0, null, 64, 64, yaw: 0, pitch: 0, zoom: 1, bounds: bounds);
+    final f1 = rasterizeModel(m, 1, null, 64, 64, yaw: 0, pitch: 0, zoom: 1, bounds: bounds);
+    final mid = rasterizeModel(m, 0, null, 64, 64, nextFrame: 1, interp: 0.5, yaw: 0, pitch: 0, zoom: 1, bounds: bounds);
+
+    expect(rasterizeModel(m, 0, null, 64, 64, nextFrame: 1, interp: 0, yaw: 0, pitch: 0, zoom: 1, bounds: bounds), f0);
+    expect(rasterizeModel(m, 0, null, 64, 64, nextFrame: 1, interp: 1, yaw: 0, pitch: 0, zoom: 1, bounds: bounds), f1);
+
+    final midXs = xsFor(mid);
+    expect(midXs, isNotEmpty);
+    final avgX = midXs.reduce((a, b) => a + b) / midXs.length;
+    expect(avgX, inInclusiveRange(30.0, 33.0));
+  });
+
+  test('rasterizeModel panX and panY shift rendered pixels', () {
+    final xyz = Float32List.fromList(<double>[-1, 0, -1, 1, 0, -1, 0, 0, 1]);
+    final m = ModelMesh([MeshSurface(3, xyz, Float32List(6), Uint32List.fromList([0, 1, 2]))], ['STND00']);
+    const bounds = [-2.0, -1.0, -2.0, 2.0, 1.0, 2.0];
+
+    (double, double) centroid(Uint8List px) {
+      var sx = 0.0, sy = 0.0, n = 0;
+      for (var y = 0; y < 64; y++) {
+        for (var x = 0; x < 64; x++) {
+          if (px[(y * 64 + x) * 4 + 3] > 0) {
+            sx += x;
+            sy += y;
+            n++;
+          }
+        }
+      }
+      return (sx / n, sy / n);
+    }
+
+    final base = centroid(rasterizeModel(m, 0, null, 64, 64, yaw: 0, pitch: 0, zoom: 1, bounds: bounds));
+    final panned =
+        centroid(rasterizeModel(m, 0, null, 64, 64, panX: 10, panY: -12, yaw: 0, pitch: 0, zoom: 1, bounds: bounds));
+    expect(panned.$1 - base.$1, closeTo(10.0, 1.0));
+    expect(panned.$2 - base.$2, closeTo(-12.0, 1.0));
+  });
+
+  testWidgets('ModelViewer pans on right-mouse drag and resets on double-tap', (tester) async {
+    final xyz = Float32List.fromList(<double>[-1, 0, -1, 1, 0, -1, 0, 0, 1]);
+    final m = ModelMesh([MeshSurface(3, xyz, Float32List(6), Uint32List.fromList([0, 1, 2]))], ['STND00']);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Center(
+          child: SizedBox(width: 120, height: 120, child: ModelViewer(mesh: m)),
+        ),
+      ),
+    );
+    await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 20)));
+    await tester.pump();
+
+    Future<(double, double)> renderedCentroid() async {
+      final img = tester.widget<RawImage>(find.byType(RawImage)).image!;
+      final bd = (await tester.runAsync(() => img.toByteData()))!;
+      var sx = 0.0, sy = 0.0, n = 0;
+      for (var y = 0; y < img.height; y++) {
+        for (var x = 0; x < img.width; x++) {
+          if (bd.getUint8((y * img.width + x) * 4 + 3) > 0) {
+            sx += x;
+            sy += y;
+            n++;
+          }
+        }
+      }
+      return (sx / n, sy / n);
+    }
+
+    final initial = await renderedCentroid();
+    final scale = tester.widget<RawImage>(find.byType(RawImage)).image!.width / 120.0;
+
+    final g = await tester.startGesture(tester.getCenter(find.byType(ModelViewer)), buttons: kSecondaryMouseButton);
+    await g.moveBy(const Offset(24, -16));
+    await g.up();
+    await tester.pump();
+    await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 20)));
+    await tester.pump();
+
+    final moved = await renderedCentroid();
+    expect((moved.$1 - initial.$1) / scale, closeTo(24.0, 2.0));
+    expect((moved.$2 - initial.$2) / scale, closeTo(-16.0, 2.0));
+
+    final center = tester.getCenter(find.byType(ModelViewer));
+    await tester.tapAt(center);
+    await tester.pump(const Duration(milliseconds: 50));
+    await tester.tapAt(center);
+    await tester.pumpAndSettle();
+    await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 20)));
+    await tester.pump();
+
+    final reset = await renderedCentroid();
+    expect(reset.$1, closeTo(initial.$1, 1.0));
+    expect(reset.$2, closeTo(initial.$2, 1.0));
   });
 }
