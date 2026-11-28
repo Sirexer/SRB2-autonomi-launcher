@@ -311,6 +311,31 @@ session bus). `--new-instance` skips it.
   `DwmSetWindowAttribute(DWMWA_SYSTEMBACKDROP_TYPE)` with the frame extended
   over the whole window.
 
+## Discord Rich Presence
+
+`lib/services/discord_rpc.dart`; Settings → Experimental → Discord Rich
+Presence (off by default, `discord_rpc_enabled`).
+
+- **IPC without C++ plugins**: runs in a background isolate; on Windows
+  connects to `\\.\pipe\discord-ipc-0..9` through `kernel32.dll` (`dart:ffi`),
+  on Linux — to Unix domain sockets (`discord-ipc-0..9`) under
+  `$XDG_RUNTIME_DIR`, `$TMPDIR`, `$TMP`, `$TEMP` or `/tmp` (including Flatpak
+  and Snap paths).
+- **Handshake and updates**: waits for Discord's `READY` event (with a 1.5 s
+  fallback), replies to `PING` frames, coalesces rapid `SET_ACTIVITY` updates
+  with a 200 ms debounce and retries once after 3 s on `ERROR`.
+- **Activity modes**:
+  - `type: 0` (Playing) — launcher status: current game, session timer, active
+    tab (open add-on, launch queue count, selected server with player count,
+    progress or replays).
+  - `type: 2` (Listening) — active music player track: title, authors, track
+    source in `large_text` (repository add-on name, file name for local/server
+    files, or game name for vanilla files) and seek/loop-aware timestamps.
+  - `type: 3` (Watching) — started replay (`levelPack · map`, character name),
+    cleared automatically when the game process exits (`isProcessAlive(pid)`).
+  The large image is always `launcher`, with `gameId` or `music` as the small
+  corner icon.
+
 ## Data and caches
 
 | File | What |

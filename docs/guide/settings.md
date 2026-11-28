@@ -8,7 +8,7 @@ All settings are in the **Settings** window (the gear at the top). The shared
 sections come first: **General** (language, theme, Autonomi, launcher build,
 updates, data), **Games** (which games are in the switcher, custom games),
 **Addons** (hidden tags, tags on the add-on page, repository updates, list
-sections), **Experimental** (player, progress, replays, save protection). Below, under
+sections), **Experimental** (player, progress, replays, save protection, Discord Rich Presence). Below, under
 the **game** picker, are the game's sections: **Game folder**, **Launch**
 (executables), **Servers** and [**Models**](#3d-models). The game can be picked right in the window —
 it does not change the launcher's current game. The settings buttons on the
@@ -105,6 +105,20 @@ SRB2 Legacy (2.1) reads only MD2 models: MD3 ones are left out of its pack.
   installed then goes to a new backup). Close the game first.
 - **Save as .zip** saves the same pack — the list and the models folder — to
   share it.
+
+## Discord Rich Presence
+
+Turned on in **Settings → Experimental → Discord Rich Presence** (off by default).
+When Discord Desktop is running on the same PC, the launcher shows:
+
+- **Launcher status** — the current game, session timer and active tab
+  (selected add-on, launch queue count, selected server with player count,
+  progress or replays);
+- **Music player** (*Listening*) — track title, authors, the add-on name (or
+  file name when not from a repository, or game name for vanilla files) and
+  track progress;
+- **Replays** (*Watching*) — started replay with its level pack, map and
+  character until the game closes.
 
 ## Language and theme
 

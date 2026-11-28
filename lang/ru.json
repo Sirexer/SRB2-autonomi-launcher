@@ -1750,5 +1750,17 @@
   "Tilt a stick, press a trigger, D-Pad or gamepad button...": "Отклоните стик, нажмите курок, крестовину или кнопку геймпада...",
   "Trigger deadzone": "Мёртвая зона курков",
   "In the root folder": "В корневой папке",
-  "Super color: cannot be selected for launch": "Супер-цвет: нельзя выбрать для запуска"
+  "Super color: cannot be selected for launch": "Супер-цвет: нельзя выбрать для запуска",
+  "Show the launcher status, selected server, replays and currently playing music in your Discord profile.": "Показывать в профиле Discord статус лаунчера, выбранный сервер, просмотр реплеев и играющий трек из плеера.",
+  "Browsing addons: {name}": "Просматривает аддон: {name}",
+  "Browsing addons": "Выбирает аддоны",
+  "Ready to launch ({n} addons)": "Готов к запуску (аддонов: {n})",
+  "Ready to launch": "Готов к запуску",
+  "Browsing servers": "Ищет сервер",
+  "Server: {name}": "Сервер: {name}",
+  "In the music player": "В музыкальном плеере",
+  "Viewing progress": "Смотрит прогресс",
+  "Browsing replays": "Просматривает реплеи",
+  "Watching replay": "Смотрит реплей",
+  "Character: {name}": "Персонаж: {name}"
 }

@@ -1750,5 +1750,17 @@
   "Tilt a stick, press a trigger, D-Pad or gamepad button...": "Inclina un stick, pulsa un gatillo, D-Pad o botón del mando...",
   "Trigger deadzone": "Zona muerta de gatillos",
   "In the root folder": "En la carpeta raíz",
-  "Super color: cannot be selected for launch": "Supercolor: no se puede seleccionar para iniciar"
+  "Super color: cannot be selected for launch": "Supercolor: no se puede seleccionar para iniciar",
+  "Show the launcher status, selected server, replays and currently playing music in your Discord profile.": "Mostrar el estado del lanzador, el servidor seleccionado, las repeticiones y la música que suena en tu perfil de Discord.",
+  "Browsing addons: {name}": "Explorando addon: {name}",
+  "Browsing addons": "Explorando addons",
+  "Ready to launch ({n} addons)": "Listo para iniciar ({n} addons)",
+  "Ready to launch": "Listo para iniciar",
+  "Browsing servers": "Buscando servidores",
+  "Server: {name}": "Servidor: {name}",
+  "In the music player": "En el reproductor de música",
+  "Viewing progress": "Viendo progreso",
+  "Browsing replays": "Explorando repeticiones",
+  "Watching replay": "Viendo repetición",
+  "Character: {name}": "Personaje: {name}"
 }

@@ -1750,5 +1750,17 @@
   "Tilt a stick, press a trigger, D-Pad or gamepad button...": "Відхиліть стік, натисніть курок, хрестовину або кнопку геймпада...",
   "Trigger deadzone": "Мертва зона курків",
   "In the root folder": "У кореневій теці",
-  "Super color: cannot be selected for launch": "Суперколір: не можна обрати для запуску"
+  "Super color: cannot be selected for launch": "Суперколір: не можна обрати для запуску",
+  "Show the launcher status, selected server, replays and currently playing music in your Discord profile.": "Показувати в профілі Discord статус лаунчера, обраний сервер, перегляд повторів та трек, що грає у плеєрі.",
+  "Browsing addons: {name}": "Переглядає аддон: {name}",
+  "Browsing addons": "Обирає аддони",
+  "Ready to launch ({n} addons)": "Готовий до запуску (аддонів: {n})",
+  "Ready to launch": "Готовий до запуску",
+  "Browsing servers": "Шукає сервер",
+  "Server: {name}": "Сервер: {name}",
+  "In the music player": "У музичному плеєрі",
+  "Viewing progress": "Переглядає прогрес",
+  "Browsing replays": "Переглядає реплеї",
+  "Watching replay": "Дивиться повтор",
+  "Character: {name}": "Персонаж: {name}"
 }

@@ -58,6 +58,12 @@ class ServersTab extends StatefulWidget {
   /// Открывает настройки на разделе Servers.
   final VoidCallback onOpenSettings;
 
+  /// Вызывается при смене выбранного сервера или обновлении его данных.
+  final VoidCallback? onSelectionChanged;
+
+  /// Ключ выбранного сервера для игры [gameId].
+  static String? selectedKeyOf(String gameId) => _ServersTabState._selectedByGame[gameId];
+
   const ServersTab({
     super.key,
     required this.store,
@@ -66,6 +72,7 @@ class ServersTab extends StatefulWidget {
     required this.onJoin,
     required this.launch,
     required this.onOpenSettings,
+    this.onSelectionChanged,
   });
 
   @override
@@ -369,6 +376,7 @@ class _ServersTabState extends State<ServersTab> {
       _local.clear();
       _errors.clear();
     });
+    widget.onSelectionChanged?.call();
     _refreshSelected(row);
   }
 
@@ -376,6 +384,7 @@ class _ServersTabState extends State<ServersTab> {
     final result = await store.queryServer(row.host, row.port);
     final info = result?.info;
     if (info != null && mounted && _selectedKey == row.key) {
+      widget.onSelectionChanged?.call();
       await _checkLocalFiles(info);
     }
   }
@@ -1567,7 +1576,10 @@ class _ServersTabState extends State<ServersTab> {
     }
     if (!mounted) return;
     // Скрытый сервер — снять выбор.
-    if (list.blocks(row.host, row.port, row.name)) setState(() => _selectedKey = null);
+    if (list.blocks(row.host, row.port, row.name)) {
+      setState(() => _selectedKey = null);
+      widget.onSelectionChanged?.call();
+    }
     showSnack(context, SnackBar(content: Text(tr('Added to the blacklist'))));
   }
 

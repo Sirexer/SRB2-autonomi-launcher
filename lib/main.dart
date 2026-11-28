@@ -28,6 +28,7 @@ import 'models/launch_config.dart';
 import 'models/mod_item.dart';
 import 'services/addon_contents.dart';
 import 'services/app_activity.dart';
+import 'services/discord_rpc.dart';
 import 'services/json_file_cache.dart';
 import 'services/characters.dart';
 import 'services/game_files.dart';
@@ -520,6 +521,17 @@ class _MainLauncherScreenState extends State<MainLauncherScreen> {
   // Черный список тегов (хранится через запятую или пробелы)
   String blacklistedTagsString = '';
 
+  final _discordRpc = DiscordRpcService();
+  bool _discordRpcEnabled = false;
+  final int _sessionStartMs = DateTime.now().millisecondsSinceEpoch;
+  String? _rpcTrackKey;
+  bool _rpcTrackPaused = true;
+  int? _rpcTrackStartMs;
+  Duration _lastRpcPos = Duration.zero;
+  DiscordReplayInfo? _watchingReplay;
+  Timer? _replayWatchTimer;
+  Object? _lastRpcViewState;
+
   /// Теги, которые репозиторий советует скрыть (`hide_tags`), добавлять в
   /// скрытые (Settings → Addons и окно «Подключить репозиторий»; по
   /// умолчанию включено). Выключено — не добавляются.
@@ -614,12 +626,14 @@ class _MainLauncherScreenState extends State<MainLauncherScreen> {
       onExitRequested: () async {
         // Музыку и медиаклавиши — до выхода: иначе звук играет и после
         // закрытия окна, а процесс не завершается.
+        _discordRpc.dispose();
         await _player.shutdown();
         AntdDaemon.stop();
         return AppExitResponse.exit;
       },
       // Запасной вариант, если окно закрыли без запроса на выход.
       onDetach: () {
+        _discordRpc.dispose();
         _player.shutdown();
         AntdDaemon.stop();
       },
@@ -631,6 +645,8 @@ class _MainLauncherScreenState extends State<MainLauncherScreen> {
       },
     );
     _loadSavedData();
+    _player.addListener(_syncDiscordPresence);
+    _player.positionListenable.addListener(_onPlayerPositionRpc);
     HardwareKeyboard.instance.addHandler(_onMediaKey);
     HardwareKeyboard.instance.addHandler(_onQueueUndoKey);
     // Демон перезапущен (завис) — доступен снова: докачиваем недостающие картинки.
@@ -648,6 +664,10 @@ class _MainLauncherScreenState extends State<MainLauncherScreen> {
 
   @override
   void dispose() {
+    _player.removeListener(_syncDiscordPresence);
+    _player.positionListenable.removeListener(_onPlayerPositionRpc);
+    _replayWatchTimer?.cancel();
+    _discordRpc.dispose();
     HardwareKeyboard.instance.removeHandler(_onMediaKey);
     HardwareKeyboard.instance.removeHandler(_onQueueUndoKey);
     _antdRestarted?.cancel();
@@ -740,6 +760,9 @@ class _MainLauncherScreenState extends State<MainLauncherScreen> {
       } catch (_) {}
     }
     _player.loadSettings();
+    _discordRpcEnabled = prefs.getBool('discord_rpc_enabled') ?? false;
+    unawaited(_discordRpc.setEnabled(_discordRpcEnabled));
+    _syncDiscordPresence();
     _hideNotDownloaded = prefs.getBool('addons_hide_not_downloaded') ?? false;
     _collapsedTagGroups.addAll(prefs.getStringList('tag_groups_collapsed') ?? const []);
 
@@ -1478,6 +1501,8 @@ class _MainLauncherScreenState extends State<MainLauncherScreen> {
         serversOf: (g) => _serversByGame.putIfAbsent(g.id, () => ServersStore(g)..load()),
         onGameFolderChanged: _setGameFolderOf,
         onGamesChanged: _gamesChanged,
+        discordRpcEnabled: _discordRpcEnabled,
+        onDiscordRpcChanged: _setDiscordRpc,
         onHiddenFoldersChanged: (g) {
           if (g.id == _game.id) _refreshServerAddons();
         },
@@ -1835,6 +1860,109 @@ class _MainLauncherScreenState extends State<MainLauncherScreen> {
     await prefs.setBool('replays_enabled', v);
   }
 
+  Future<void> _setDiscordRpc(bool v) async {
+    _discordRpcEnabled = v;
+    await _discordRpc.setEnabled(v);
+    _syncDiscordPresence();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('discord_rpc_enabled', v);
+  }
+
+  String _currentTabKey() {
+    if (_currentTab == _replaysTab) return 'replays';
+    if (_currentTab == _progressTab) return 'progress';
+    if (_currentTab == _playerTab) return 'player';
+    return switch (_currentTab) {
+      1 => 'launch',
+      2 => 'servers',
+      _ => 'addons',
+    };
+  }
+
+  void _onPlayerPositionRpc() {
+    if (!_discordRpcEnabled || !_playerEnabled || !_player.playing || _player.loading) {
+      _lastRpcPos = Duration.zero;
+      return;
+    }
+    final pos = _player.position;
+    final t = _player.current;
+    final len = _player.length > Duration.zero ? _player.length : (t?.duration ?? Duration.zero);
+    final wrappedOrSeeked = pos + const Duration(seconds: 2) < _lastRpcPos ||
+        (len > Duration.zero && _lastRpcPos < len && pos >= len);
+    _lastRpcPos = pos;
+    if (wrappedOrSeeked) _syncDiscordPresence();
+  }
+
+  void _syncDiscordPresence() {
+    if (!_discordRpcEnabled) {
+      _discordRpc.clear();
+      return;
+    }
+    final t = _player.current;
+    // Во время подгрузки следующего трека не сбрасываем статус «Слушает» в пустой плеер.
+    if (_watchingReplay == null && _playerEnabled && t != null && _player.loading && !_player.paused && !_rpcTrackPaused) {
+      return;
+    }
+    DiscordMusicInfo? music;
+    if (_playerEnabled && t != null && _player.playing && !_player.loading) {
+      final now = DateTime.now().millisecondsSinceEpoch;
+      final pos = _player.position;
+      final rawDuration = _player.length > Duration.zero ? _player.length : t.duration;
+      final activeDuration = (rawDuration != null && rawDuration > Duration.zero && pos < rawDuration) ? rawDuration : null;
+      final estStart = now - pos.inMilliseconds;
+      // Обновляем время начала трека только при смене трека, снятии с паузы или перемотке/цикле (>1.5 с).
+      if (_rpcTrackKey != t.key ||
+          _rpcTrackPaused ||
+          _rpcTrackStartMs == null ||
+          (estStart - _rpcTrackStartMs!).abs() > 1500) {
+        _rpcTrackKey = t.key;
+        _rpcTrackPaused = false;
+        _rpcTrackStartMs = estStart;
+      }
+      final addonLabel = _player.labelOf(t.file).trim();
+      final trackGameName = t.game.isEmpty ? '' : (Games.find(t.game)?.fullName ?? t.game);
+      final sourceName = t.category == MusicCategory.game
+          ? (trackGameName.isNotEmpty ? trackGameName : p.basename(t.file))
+          : (addonLabel.isNotEmpty ? addonLabel : p.basename(t.file));
+      music = (
+        title: t.displayTitle,
+        authors: t.displayAuthors,
+        gameId: t.game,
+        sourceName: sourceName,
+        duration: activeDuration,
+        startMs: _rpcTrackStartMs,
+      );
+    } else {
+      _rpcTrackPaused = true;
+    }
+    String? selectedServerName;
+    if (_currentTab == 2) {
+      final skey = ServersTab.selectedKeyOf(_game.id);
+      final row = skey == null ? null : _servers.rowByKey(skey);
+      if (row != null) {
+        final name = row.name.trim();
+        if (name.isNotEmpty) {
+          final info = row.result?.info;
+          selectedServerName = info != null && info.maxPlayers > 0
+              ? '$name (${info.players}/${info.maxPlayers})'
+              : name;
+        }
+      }
+    }
+    final selectedName = selectedMod?.name ?? (_selectedLocalFile == null ? null : p.basename(_selectedLocalFile!));
+    _discordRpc.update(buildLauncherPresence(
+      gameId: _game.id,
+      gameName: _game.name,
+      tab: _currentTabKey(),
+      sessionStartMs: _sessionStartMs,
+      selectedModName: selectedName,
+      selectedServerName: selectedServerName,
+      queueCount: _activeQueue.length,
+      playingTrack: music,
+      watchingReplay: _watchingReplay,
+    ));
+  }
+
   Future<void> _saveReplayExtraAddons(GameDef game, List<ReplayExtraAddon> list) async {
     setState(() => _replayExtraAddons[game.id] = list);
     final prefs = await SharedPreferences.getInstance();
@@ -2135,6 +2263,12 @@ class _MainLauncherScreenState extends State<MainLauncherScreen> {
       _preparingLaunch(() => _launchGameNow(connectTo: connectTo, serverFiles: serverFiles, executableId: executableId));
 
   Future<void> _launchGameNow({String? connectTo, List<String>? serverFiles, String? executableId}) async {
+    if (_watchingReplay != null) {
+      _replayWatchTimer?.cancel();
+      _replayWatchTimer = null;
+      _watchingReplay = null;
+      _syncDiscordPresence();
+    }
     if (!await _ensureGameFolder()) return;
     final folder = srb2FolderPath!;
 
@@ -2188,11 +2322,85 @@ class _MainLauncherScreenState extends State<MainLauncherScreen> {
   Future<void> _playPack(List<String> files, {String? executableId}) =>
       _preparingLaunch(() => _playDirectNow(files, executableId: executableId));
 
-  Future<void> _playReplay(String playdemoArg, List<String> files, {String? executableId}) =>
-      _preparingLaunch(() => _playDirectNow(files, executableId: executableId, playdemoArg: playdemoArg));
+  Future<void> _playReplay(
+    String playdemoArg,
+    List<String> files, {
+    String? executableId,
+    ReplayFile? replay,
+    String? characterName,
+    String? mapTitle,
+  }) =>
+      _preparingLaunch(() async {
+        final pid = await _playDirectNow(files, executableId: executableId, playdemoArg: playdemoArg);
+        if (pid != null && replay != null) {
+          await _trackReplayWatching(pid, replay, files, characterName: characterName, mapTitle: mapTitle);
+        }
+      });
 
-  Future<void> _playDirectNow(List<String> files, {String? executableId, String? playdemoArg}) async {
-    if (!await _ensureGameFolder()) return;
+  Future<String> _resolveReplayLevelPack(ReplayFile replay, List<String> files) async {
+    final extraSet = {
+      for (final e in _replayExtraAddons[_game.id] ?? const <ReplayExtraAddon>[]) p.normalize(e.path).toLowerCase(),
+    };
+    final packFiles = [
+      for (final f in files)
+        if (!extraSet.contains(p.normalize(f).toLowerCase())) f,
+    ];
+    if (packFiles.isNotEmpty) {
+      final packNorms = {for (final f in packFiles) p.normalize(f).toLowerCase()};
+      final candidates = await _progressCandidates();
+      for (final c in candidates) {
+        if (c.files.any((cf) => packNorms.contains(p.normalize(cf).toLowerCase()))) {
+          return c.title;
+        }
+      }
+      for (final f in packFiles) {
+        final label = _player.labelOf(f).trim();
+        if (label.isNotEmpty) return label;
+      }
+      return p.basenameWithoutExtension(packFiles.first);
+    }
+    if (replay.folder.isNotEmpty &&
+        replay.folder != 'main' &&
+        replay.folder != ReplayScanner.importedFolder &&
+        !replay.folder.startsWith('online')) {
+      return replay.folder;
+    }
+    return _game.name;
+  }
+
+  Future<void> _trackReplayWatching(
+    int pid,
+    ReplayFile replay,
+    List<String> files, {
+    String? characterName,
+    String? mapTitle,
+  }) async {
+    _replayWatchTimer?.cancel();
+    final levelPack = await _resolveReplayLevelPack(replay, files);
+    if (!mounted) return;
+    _watchingReplay = (
+      gameId: _game.id,
+      gameName: _game.name,
+      character: (characterName ?? replay.skin).trim(),
+      levelPack: levelPack,
+      map: (mapTitle ?? replay.mapName).trim(),
+      startMs: DateTime.now().millisecondsSinceEpoch,
+    );
+    _syncDiscordPresence();
+    _replayWatchTimer = Timer.periodic(const Duration(seconds: 2), (timer) {
+      if (!mounted || !isProcessAlive(pid)) {
+        timer.cancel();
+        if (identical(_replayWatchTimer, timer)) _replayWatchTimer = null;
+        if (_watchingReplay != null) {
+          _watchingReplay = null;
+          _syncDiscordPresence();
+        }
+      }
+    });
+  }
+
+  Future<int?> _playDirectNow(List<String> files, {String? executableId, String? playdemoArg}) async {
+    if (!await _ensureGameFolder()) return null;
     final folder = srb2FolderPath!;
     final rawCmd = _launch.byId(executableId)?.command ?? _launch.command;
     var parts = PlatformUtils.splitCommandLine(rawCmd);
@@ -2204,7 +2412,7 @@ class _MainLauncherScreenState extends State<MainLauncherScreen> {
       if (files.isNotEmpty) ...['-file', ...files.map((x) => _gameRelative(folder, x))],
       if (playdemoArg != null) ...['-playdemo', playdemoArg],
     ];
-    await _startGame(executable, args, folder, files);
+    return _startGame(executable, args, folder, files);
   }
 
   /// Поиск локальных аддонов для реплея в папке игры: сначала по имени и контрольной сумме,
@@ -2283,13 +2491,13 @@ class _MainLauncherScreenState extends State<MainLauncherScreen> {
     return null;
   }
 
-  /// Запускает игру и показывает ошибку запуска.
+  /// Запускает игру и показывает ошибку запуска; возвращает PID процесса.
   /// [files] — запускаемые аддоны (по ним — какие сохранения проверить).
-  Future<void> _startGame(String executable, List<String> finalArgs, String folder, List<String> files) async {
+  Future<int?> _startGame(String executable, List<String> finalArgs, String folder, List<String> files) async {
     // Повреждённое сохранение игра не загрузит (и предложит его удалить) —
     // сначала проверка и восстановление.
     await _guardSaves(folder, files);
-    if (!mounted) return;
+    if (!mounted) return null;
     try {
       showSnack(context, 
         SnackBar(
@@ -2312,7 +2520,7 @@ class _MainLauncherScreenState extends State<MainLauncherScreen> {
         }
       }
 
-      await Process.start(
+      final proc = await Process.start(
         exe,
         args,
         mode: ProcessStartMode.detached,
@@ -2320,8 +2528,9 @@ class _MainLauncherScreenState extends State<MainLauncherScreen> {
         environment: childEnv,
         includeParentEnvironment: childEnv == null,
       );
+      return proc.pid;
     } on ProcessException catch (e) {
-      if (!mounted) return;
+      if (!mounted) return null;
       ScaffoldMessenger.of(context).hideCurrentSnackBar();
       // EACCES на Linux: файл есть, но без флага исполнения; 2 — файл не найден.
       final String hint;
@@ -2346,9 +2555,11 @@ class _MainLauncherScreenState extends State<MainLauncherScreen> {
         final updated = await showExecutableDialog(context, initial: selected, initialDirectory: folder);
         if (updated != null) _launch.updateExecutable(updated);
       }
+      return null;
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted) return null;
       await _showProblem(title: tr('Launch error'), message: '$e', error: true);
+      return null;
     }
   }
 
@@ -4446,6 +4657,21 @@ class _MainLauncherScreenState extends State<MainLauncherScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final rpcSnap = (
+      _discordRpcEnabled,
+      _game.id,
+      _currentTab,
+      _activeQueue.length,
+      selectedMod?.key,
+      _selectedLocalFile,
+      ServersTab.selectedKeyOf(_game.id),
+      _watchingReplay,
+      I18n.instance.code,
+    );
+    if (rpcSnap != _lastRpcViewState) {
+      _lastRpcViewState = rpcSnap;
+      _syncDiscordPresence();
+    }
     return Scaffold(
       appBar: AppBar(
         // Вместо заголовка — переключатель игры.
@@ -4601,6 +4827,7 @@ class _MainLauncherScreenState extends State<MainLauncherScreen> {
               onJoin: (address, files, executableId) =>
                   _launchGame(connectTo: address, serverFiles: files, executableId: executableId),
               onOpenSettings: () => _openSettings(SettingsSection.servers),
+              onSelectionChanged: _syncDiscordPresence,
             )
           : Row(
               children: [

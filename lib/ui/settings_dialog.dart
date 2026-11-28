@@ -110,6 +110,8 @@ class SettingsDialog extends StatefulWidget {
 
   /// Скрытые папки аддонов игры изменились (список аддонов — заново).
   final ValueChanged<GameDef> onHiddenFoldersChanged;
+  final bool discordRpcEnabled;
+  final ValueChanged<bool>? onDiscordRpcChanged;
 
   const SettingsDialog({
     super.key,
@@ -151,6 +153,8 @@ class SettingsDialog extends StatefulWidget {
     required this.onThemeChanged,
     required this.onGamesChanged,
     required this.onHiddenFoldersChanged,
+    this.discordRpcEnabled = false,
+    this.onDiscordRpcChanged,
   });
 
   /// Открывает настройки на нужном разделе.
@@ -188,6 +192,7 @@ class _SettingsDialogState extends State<SettingsDialog> {
   late bool _repoUpdateButtons = widget.repositoryUpdateButtons;
   late bool _autoHideTags = widget.autoHideTags;
   late TagDisplay _tagDisplay = widget.tagDisplay;
+  late bool _discordRpcEnabled = widget.discordRpcEnabled;
 
   void _setTagDisplay(TagDisplay v) {
     setState(() => _tagDisplay = v);
@@ -561,6 +566,18 @@ class _SettingsDialogState extends State<SettingsDialog> {
               'single player saves) and keeps the last whole copy of each. If a file is damaged (for example, the PC '
               'turned off while the game was saving), it is restored from the copy; the damaged file is kept.')),
         ),
+        if (widget.onDiscordRpcChanged != null)
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            value: _discordRpcEnabled,
+            onChanged: (v) {
+              setState(() => _discordRpcEnabled = v);
+              widget.onDiscordRpcChanged!(v);
+            },
+            title: Text(tr('Discord Rich Presence')),
+            subtitle: Text(tr(
+                'Show the launcher status, selected server, replays and currently playing music in your Discord profile.')),
+          ),
       ],
     );
   }

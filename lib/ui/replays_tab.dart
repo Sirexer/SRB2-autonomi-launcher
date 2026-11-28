@@ -51,7 +51,14 @@ class ReplaysTab extends StatefulWidget {
 
   /// Запуск реплея: `playdemoArg` (относительный путь для `-playdemo`) и
   /// список локальных файлов аддонов для `-file`.
-  final Future<void> Function(String playdemoArg, List<String> addonFiles, {String? executableId}) onPlay;
+  final Future<void> Function(
+    String playdemoArg,
+    List<String> addonFiles, {
+    String? executableId,
+    ReplayFile? replay,
+    String? characterName,
+    String? mapTitle,
+  }) onPlay;
 
   const ReplaysTab({
     super.key,
@@ -896,7 +903,28 @@ class _ReplaysTabState extends State<ReplaysTab> {
       }
     }
 
-    await widget.onPlay(playdemoArg, files, executableId: executableId);
+    String? charName;
+    if (replay.validHeader && replay.skin.isNotEmpty) {
+      final chars = await _charsFor(files).timeout(const Duration(milliseconds: 500), onTimeout: () => const {});
+      final ch = chars[replay.skin.toLowerCase()];
+      charName = (ch != null && ch.realname.trim().isNotEmpty) ? ch.realname.trim() : replay.skin;
+    }
+    String? mapTitle;
+    if (replay.validHeader && replay.mapName.isNotEmpty) {
+      final maps = await _mapsFor(files).timeout(const Duration(milliseconds: 500), onTimeout: () => const {});
+      final preview = maps[replay.mapName.toUpperCase()];
+      final clean = preview != null && preview.title.isNotEmpty ? srb2PlainTitle(preview.title).trim() : '';
+      mapTitle = clean.isNotEmpty ? '${replay.mapName} — $clean' : replay.mapName;
+    }
+
+    await widget.onPlay(
+      playdemoArg,
+      files,
+      executableId: executableId,
+      replay: replay,
+      characterName: charName,
+      mapTitle: mapTitle,
+    );
   }
 
   String _kindLabel(ReplayKind kind) => switch (kind) {

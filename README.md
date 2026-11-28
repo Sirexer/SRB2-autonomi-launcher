@@ -38,6 +38,9 @@ Platforms: **Windows x64**, **Linux x86_64** (AppImage) and **Linux ARM64**
   inspect maps/characters/add-ons, add extra add-ons and launch playback.
 - **Save protection** (experimental) — a whole copy of every save, restored if
   the file gets damaged.
+- **Discord Rich Presence** (experimental) — shows the current game and tab,
+  selected server, replay playback or the track playing in the music player in
+  your Discord profile.
 - **3D models** — download repository model packs or add local ones, put
   several packs together into one (including multiple versions per archive),
   pick the version of each model in a 3D preview, install to the game with a
