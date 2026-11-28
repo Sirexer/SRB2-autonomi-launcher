@@ -33,6 +33,7 @@ class FirstRunChoice {
   final bool progress;
   final bool replays;
   final bool saveProtection;
+  final bool discordRpc;
 
   const FirstRunChoice({
     required this.connectRepository,
@@ -44,6 +45,7 @@ class FirstRunChoice {
     required this.progress,
     required this.replays,
     required this.saveProtection,
+    this.discordRpc = false,
   });
 }
 
@@ -71,6 +73,7 @@ class FirstRunWizard extends StatefulWidget {
   final bool progress;
   final bool replays;
   final bool saveProtection;
+  final bool discordRpc;
 
   const FirstRunWizard({
     super.key,
@@ -84,6 +87,7 @@ class FirstRunWizard extends StatefulWidget {
     required this.progress,
     this.replays = false,
     required this.saveProtection,
+    this.discordRpc = false,
   });
 
   static Future<FirstRunChoice?> show(BuildContext context, FirstRunWizard wizard) => showDialog<FirstRunChoice>(
@@ -130,6 +134,7 @@ class _FirstRunWizardState extends State<FirstRunWizard> {
   late bool _progress = widget.progress;
   late bool _replays = widget.replays;
   late bool _saveProtection = widget.saveProtection;
+  late bool _discordRpc = widget.discordRpc;
 
   _Step get _step => _steps[_index];
   bool get _last => _index == _steps.length - 1;
@@ -240,6 +245,7 @@ class _FirstRunWizardState extends State<FirstRunWizard> {
         progress: _progress,
         replays: _replays,
         saveProtection: _saveProtection,
+        discordRpc: _discordRpc,
       ),
     );
   }
@@ -557,6 +563,14 @@ class _FirstRunWizardState extends State<FirstRunWizard> {
           subtitle: Text(tr('Before the game starts, the launcher checks the save files it will use (progress and '
               'single player saves) and keeps the last whole copy of each. If a file is damaged (for example, the PC '
               'turned off while the game was saving), it is restored from the copy; the damaged file is kept.')),
+        ),
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          value: _discordRpc,
+          onChanged: (v) => setState(() => _discordRpc = v),
+          title: Text(tr('Discord Rich Presence')),
+          subtitle: Text(tr(
+              'Show the launcher status, selected server, replays and currently playing music in your Discord profile.')),
         ),
       ];
 }

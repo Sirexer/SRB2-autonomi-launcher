@@ -24,7 +24,7 @@ A wizard is shown once:
 3. **games** — which to show and which custom games to add from
    `another_games.json`; then, optionally, the folder and executable of each
    game (found ones are filled in);
-4. **experimental features** — player, progress, replays, save protection.
+4. **experimental features** — player, progress, replays, save protection, Discord Rich Presence.
 
 ## Game folder
 

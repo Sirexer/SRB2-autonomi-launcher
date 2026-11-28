@@ -921,6 +921,7 @@ class _MainLauncherScreenState extends State<MainLauncherScreen> {
         progress: _progressEnabled,
         replays: _replaysEnabled,
         saveProtection: SaveGuard.enabled,
+        discordRpc: _discordRpcEnabled,
       ),
     );
     if (choice == null || !mounted) return;
@@ -953,6 +954,7 @@ class _MainLauncherScreenState extends State<MainLauncherScreen> {
     if (choice.progress != _progressEnabled) await _setProgressEnabled(choice.progress);
     if (choice.replays != _replaysEnabled) await _setReplaysEnabled(choice.replays);
     if (choice.saveProtection != SaveGuard.enabled) await _setSaveProtection(choice.saveProtection);
+    if (choice.discordRpc != _discordRpcEnabled) await _setDiscordRpc(choice.discordRpc);
     if (!mounted) return;
     _gamesChanged();
     if (choice.connectRepository && pointer != null) unawaited(_connectPointerRepository(pointer));

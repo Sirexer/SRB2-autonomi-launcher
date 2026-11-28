@@ -80,7 +80,7 @@ A short wizard asks for:
 2. the add-on repository from `pointer.txt` next to the launcher;
 3. which games to show and their folders and executables (found ones are
    filled in);
-4. experimental features: music player, progress, replays, save protection.
+4. experimental features: music player, progress, replays, save protection, Discord Rich Presence.
 
 Everything can be changed later in Settings.
 

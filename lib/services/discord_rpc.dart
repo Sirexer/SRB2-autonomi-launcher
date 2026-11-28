@@ -236,8 +236,9 @@ class DiscordRpcService {
     if (_disposed || _enabled == value) return;
     _enabled = value;
     if (value) {
+      final hadPort = _workerPort != null;
       await _ensureStarted();
-      if (_latest != null) _workerPort?.send({'cmd': 'set', 'activity': _latest!.toActivityJson()});
+      if (hadPort && _latest != null) _workerPort?.send({'cmd': 'set', 'activity': _latest!.toActivityJson()});
     } else {
       _stopWorker();
     }
@@ -310,6 +311,8 @@ void _ipcWorkerMain((SendPort mainPort, String clientId, int appPid) init) {
   var hasPending = false;
   var handshakeReady = false;
   var connecting = false;
+  var pipeOffset = 0;
+  var errorRetries = 0;
   var nonce = 0;
   var stopped = false;
   Timer? setDebounce;
@@ -321,74 +324,9 @@ void _ipcWorkerMain((SendPort mainPort, String clientId, int appPid) init) {
     transport = null;
   }
 
-  Future<void> ensureConnected() async {
-    if (stopped || transport != null || connecting) return;
-    connecting = true;
-    try {
-      void sendActivity(Map<String, Object?>? activity) {
-        final t = transport;
-        if (t == null || !handshakeReady) return;
-        final frame = encodeDiscordIpcFrame(1, {
-          'cmd': 'SET_ACTIVITY',
-          'args': {
-            'pid': appPid,
-            'activity': activity,
-          },
-          'nonce': '${++nonce}',
-        });
-        if (!t.write(frame)) {
-          dropTransport();
-        }
-      }
-
-      final next = await _IpcTransport.connect(onFrame: (op, payload) {
-        if (stopped) return;
-        if (op == 2) {
-          dropTransport();
-          return;
-        }
-        final evt = payload['evt'];
-        if (evt == 'READY' && !handshakeReady) {
-          handshakeReady = true;
-          if (hasPending) sendActivity(pendingActivity);
-        } else if (evt == 'ERROR' && hasPending) {
-          retryTimer?.cancel();
-          retryTimer = Timer(const Duration(seconds: 3), () {
-            if (!stopped && hasPending) sendActivity(pendingActivity);
-          });
-        }
-      });
-      if (stopped || next == null) {
-        next?.close();
-        return;
-      }
-      if (!next.write(encodeDiscordIpcFrame(0, {'v': 1, 'client_id': clientId}))) {
-        next.close();
-        return;
-      }
-      transport = next;
-      // Читаем ответ READY как только Discord обработает handshake (до 1.5 с).
-      for (var i = 0; i < 30 && !stopped && transport == next && !handshakeReady; i++) {
-        await Future<void>.delayed(const Duration(milliseconds: 50));
-        if (stopped || transport != next) return;
-        if (!next.pumpIncoming()) {
-          dropTransport();
-          return;
-        }
-      }
-      if (!stopped && transport == next && !handshakeReady) {
-        handshakeReady = true;
-        if (hasPending) sendActivity(pendingActivity);
-      }
-    } finally {
-      connecting = false;
-    }
-  }
-
   void sendNow(Map<String, Object?>? activity) {
     final t = transport;
     if (t == null) {
-      ensureConnected();
       return;
     }
     if (!handshakeReady) return;
@@ -402,7 +340,73 @@ void _ipcWorkerMain((SendPort mainPort, String clientId, int appPid) init) {
     });
     if (!t.write(frame)) {
       dropTransport();
-      ensureConnected();
+    }
+  }
+
+  void scheduleSend([Duration delay = const Duration(milliseconds: 200)]) {
+    setDebounce?.cancel();
+    setDebounce = Timer(delay, () {
+      if (stopped || !hasPending) return;
+      if (transport == null || !handshakeReady) return;
+      errorRetries = 0;
+      sendNow(pendingActivity);
+    });
+  }
+
+  Future<void> ensureConnected() async {
+    if (stopped || transport != null || connecting) return;
+    connecting = true;
+    try {
+      final next = await _IpcTransport.connect(
+        startIndex: pipeOffset,
+        onFrame: (op, payload) {
+          if (stopped) return;
+          if (op == 2) {
+            dropTransport();
+            return;
+          }
+          final evt = payload['evt'];
+          if (evt == 'READY') {
+            handshakeReady = true;
+            pipeOffset = 0;
+            errorRetries = 0;
+            if (hasPending) scheduleSend(const Duration(milliseconds: 250));
+          } else if (evt == 'ERROR' && hasPending && errorRetries < 3) {
+            errorRetries++;
+            retryTimer?.cancel();
+            retryTimer = Timer(const Duration(seconds: 3), () {
+              if (!stopped && hasPending) sendNow(pendingActivity);
+            });
+          }
+        },
+      );
+      if (stopped || next == null) {
+        next?.close();
+        pipeOffset = 0;
+        return;
+      }
+      if (!next.write(encodeDiscordIpcFrame(0, {'v': 1, 'client_id': clientId}))) {
+        next.close();
+        return;
+      }
+      transport = next;
+      // Ждём настоящий READY до 6 с: при запуске Discord может создать канал
+      // до полной готовности RPC и ответить не сразу.
+      for (var i = 0; i < 60 && !stopped && transport == next && !handshakeReady; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+        if (stopped || transport != next) return;
+        if (!next.pumpIncoming()) {
+          dropTransport();
+          return;
+        }
+      }
+      if (!stopped && transport == next && !handshakeReady) {
+        // Канал не ответил на handshake — сбрасываем и попробуем заново.
+        pipeOffset = (pipeOffset + 1) % 10;
+        dropTransport();
+      }
+    } finally {
+      connecting = false;
     }
   }
 
@@ -413,7 +417,7 @@ void _ipcWorkerMain((SendPort mainPort, String clientId, int appPid) init) {
     if (!t.pumpIncoming()) dropTransport();
   });
 
-  final reconnectTimer = Timer.periodic(const Duration(seconds: 8), (_) {
+  final reconnectTimer = Timer.periodic(const Duration(seconds: 3), (_) {
     if (!stopped && transport == null) ensureConnected();
   });
 
@@ -444,10 +448,8 @@ void _ipcWorkerMain((SendPort mainPort, String clientId, int appPid) init) {
     if (cmd == 'set') {
       hasPending = true;
       pendingActivity = (msg['activity'] as Map).cast<String, Object?>();
-      setDebounce?.cancel();
-      setDebounce = Timer(const Duration(milliseconds: 200), () {
-        if (!stopped && hasPending) sendNow(pendingActivity);
-      });
+      if (transport == null) ensureConnected();
+      scheduleSend();
     }
   });
 
@@ -459,10 +461,13 @@ abstract class _IpcTransport {
   bool pumpIncoming();
   void close();
 
-  static Future<_IpcTransport?> connect({void Function(int op, Map<String, Object?> payload)? onFrame}) =>
+  static Future<_IpcTransport?> connect({
+    int startIndex = 0,
+    void Function(int op, Map<String, Object?> payload)? onFrame,
+  }) =>
       Platform.isWindows
-          ? Future.value(_WinPipeTransport.openAny(onFrame: onFrame))
-          : _UnixSocketTransport.openAny(onFrame: onFrame);
+          ? Future.value(_WinPipeTransport.openAny(startIndex: startIndex, onFrame: onFrame))
+          : _UnixSocketTransport.openAny(startIndex: startIndex, onFrame: onFrame);
 }
 
 typedef _CreateFileWNative = IntPtr Function(
@@ -554,11 +559,15 @@ class _WinPipeTransport implements _IpcTransport {
 
   _WinPipeTransport(this._handle, [this._onFrame]);
 
-  static _WinPipeTransport? openAny({void Function(int op, Map<String, Object?> payload)? onFrame}) {
+  static _WinPipeTransport? openAny({
+    int startIndex = 0,
+    void Function(int op, Map<String, Object?> payload)? onFrame,
+  }) {
     _bind();
     const access = 0x80000000 | 0x40000000; // GENERIC_READ | GENERIC_WRITE
     const openExisting = 3;
-    for (var i = 0; i < 10; i++) {
+    for (var offset = 0; offset < 10; offset++) {
+      final i = (startIndex + offset) % 10;
       final path = '\\\\.\\pipe\\discord-ipc-$i';
       final wPath = path.toNativeUtf16();
       try {
@@ -669,7 +678,10 @@ class _UnixSocketTransport implements _IpcTransport {
     );
   }
 
-  static Future<_UnixSocketTransport?> openAny({void Function(int op, Map<String, Object?> payload)? onFrame}) async {
+  static Future<_UnixSocketTransport?> openAny({
+    int startIndex = 0,
+    void Function(int op, Map<String, Object?> payload)? onFrame,
+  }) async {
     final bases = <String>{
       ?Platform.environment['XDG_RUNTIME_DIR'],
       ?Platform.environment['TMPDIR'],
@@ -686,7 +698,8 @@ class _UnixSocketTransport implements _IpcTransport {
     ];
     for (final dir in dirs) {
       if (!Directory(dir).existsSync()) continue;
-      for (var i = 0; i < 10; i++) {
+      for (var offset = 0; offset < 10; offset++) {
+        final i = (startIndex + offset) % 10;
         final path = '$dir/discord-ipc-$i';
         try {
           final sock = await Socket.connect(
